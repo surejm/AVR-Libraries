@@ -12,6 +12,12 @@
 #include <avr/io.h>
 #include <TWI/twi.h>
 
+#define PCA9633_AUTO_INC_NO				0x00
+#define PCA9633_AUTO_INC_ALL			0x80
+#define PCA9633_AUTO_INC_PWM			0xA0
+#define PCA9633_AUTO_INC_GLOBAL			0xC0
+#define PCA9633_AUTO_INC_GLOBAL_AND_PWM	0xE0
+
 #define PCA9633_MODE1		0x00
 #define PCA9633_MODE2		0x01
 #define PCA9633_PWM0		0x02
@@ -26,6 +32,13 @@
 #define PCA9633_SUBADR3		0x0B
 #define PCA9633_ALLCALLADR	0x0C
 
+#define PCA9633_REGISTER_COUNT	0x0D
+
+#define PCA9633_LEDOUT_OFF				0x00
+#define PCA9633_LEDOUT_ON				0x01
+#define PCA9633_LEDOUT_PWM				0x02
+#define PCA9633_LEDOUT_PWM_AND_GROUP	0x03
+
 #ifndef PCA9633_ADDRESS
 #define PCA9633_ADDRESS		0x60
 #endif
@@ -34,14 +47,25 @@
 #define PCA9633_OE			PORTB1
 #define PCA9633_OE_DDR		DDRB
 #define PCA9633_OE_PORT		PORTB
+#define PCA9633_OE_PINX		PINB
 #endif
 
 void pca9633setup();
 void pca9633setOutput(const uint8_t output, const uint8_t value);
-void pca9633setAllOutputs(const uint8_t value1, const uint8_t value2, const uint8_t value3, const uint8_t value4);
+void pca9633setAllOutputs(const uint8_t value0, const uint8_t value1, const uint8_t value2, const uint8_t value3);
 void pca9633outputOff();
 void pca9633outputOn();
+uint8_t pca9633outputIsOn();
+
+void pca9633setLedout(const uint8_t value[4]);
+void pca9633goToSleep();
+void pca9633wakeUp();
+uint8_t pca9633isSleeping();
 
 void pca9633test();
+
+#ifdef DEBUG_PCA9633
+void pca9633readAllRegisters();
+#endif
 
 #endif /* PCA9633_H_ */

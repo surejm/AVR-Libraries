@@ -47,6 +47,13 @@ uint8_t twiReadAck() {
 	return TWDR;
 }
 
+uint8_t twiReadNack() {
+	TWCR = _BV(TWINT) | _BV(TWEN);
+	
+	while (!(TWCR & _BV(TWINT)));
+	return TWDR;
+}
+
 uint8_t twiGetStatus() {
 	// Mask status
 	return TWSR & 0xF8;
@@ -84,12 +91,18 @@ uint8_t twiWrite(const uint8_t data)
 	return 1;
 }
 
-uint8_t twiRequestFrom(const uint8_t address)
+uint8_t twiRequestFrom(const uint8_t address, uint8_t* storage, const uint8_t byteCount)
 {
 	twiStart();
 	if (twiGetStatus() != TW_START) return 0; // Check if a START condition has been transmitted
 	twiWriteRaw(address << 1 | 0x1); // Send the address + Read bit (1)
 	if (twiGetStatus() != TW_MR_SLA_ACK) return 0; // Check if SLA+W has been transmitted
+	
+	for (uint8_t i = 0; i < byteCount - 1; i++)
+		storage[i] = twiReadAck();
+	storage[byteCount - 1] = twiReadNack();
+	
+	twiStop();
 	return 1;
 }
 

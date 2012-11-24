@@ -28,12 +28,13 @@ void twiSetup();
 void twiStart();
 void twiStop();
 uint8_t twiReadAck();
+uint8_t twiReadNack();
 uint8_t twiGetStatus();
 void twiWriteRaw(const uint8_t data);
 
 uint8_t twiBeginTransmission(const uint8_t address);
 void twiEndTransmission();
 uint8_t twiWrite(const uint8_t data);
-uint8_t twiRequestFrom(const uint8_t address);
+uint8_t twiRequestFrom(const uint8_t address, uint8_t* storage, const uint8_t byteCount);
 
 #endif /* TWI_H_ */
