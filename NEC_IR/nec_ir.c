@@ -7,14 +7,15 @@
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
-#include <UART/uart.h>
+#include <atmega328x/uart.h>
+
 #include "nec_ir.h"
 
 
 /************************************************************************
 	Setup the micro counter
 ************************************************************************/
-void setupMicroCounter()
+static void setupMicroCounter()
 {
 	/*
 		Prescale = 1;
@@ -28,7 +29,7 @@ void setupMicroCounter()
 /************************************************************************
 	Start the micro counter
 ************************************************************************/
-void startMicroCounter()
+static void startMicroCounter()
 {
 	TCCR2B = _BV(CS20);
 	TIMSK2 = _BV(OCIE2A);
@@ -38,7 +39,7 @@ void startMicroCounter()
 /************************************************************************
 	Stop the micro counter
 ************************************************************************/
-void stopMicroCounter()
+static void stopMicroCounter()
 {
 	TCCR2B = 0;
 	_microCount = 0;
@@ -56,8 +57,8 @@ ISR(TIMER2_COMPA_vect)
 /************************************************************************
 	Setup the IR Receiver
 ************************************************************************/
-void necIrSetup(void(*theManageIrDataFunc)(uint32_t))
-{
+void NEC_IR_Init(void(*theManageIrDataFunc)(uint32_t))
+{	
 	_irManageDataFunc = theManageIrDataFunc;
 	setupMicroCounter();
 	DDRD &= ~_BV(PORTD3);
@@ -105,12 +106,12 @@ ISR(INT1_vect)
 			}
 			irData = irDataCorrectEndian;
 			
-			_irManageDataFunc(irDataCorrectEndian);
+			if (_irManageDataFunc) _irManageDataFunc(irDataCorrectEndian);
 			/*
-			uartTransmit((irData >> 24) & 0xFF);	
-			uartTransmit((irData >> 16) & 0xFF);
-			uartTransmit((irData >> 8) & 0xFF);
-			uartTransmit(irData & 0xFF);
+			UART_Write((irData >> 24) & 0xFF);	
+			UART_Write((irData >> 16) & 0xFF);
+			UART_Write((irData >> 8) & 0xFF);
+			UART_Write(irData & 0xFF);
 			*/
 			
 			bitCount = irData = 0;
