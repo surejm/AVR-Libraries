@@ -76,6 +76,15 @@
 #define RX_FULL     1
 #define RX_EMPTY    0
 
+/* Pipes ---------------------------------------------------------------------*/
+#define PIPE_0		0x01
+#define PIPE_1		0x02
+#define PIPE_2		0x04
+#define PIPE_3		0x08
+#define PIPE_4		0x10
+#define PIPE_5		0x20
+#define ALL_PIPES	(PIPE_0 | PIPE_1 | PIPE_2 | PIPE_3 | PIPE_4 | PIPE_5)
+
 /* Commands ------------------------------------------------------------------*/
 #define R_REGISTER    0x00
 #define W_REGISTER    0x20
