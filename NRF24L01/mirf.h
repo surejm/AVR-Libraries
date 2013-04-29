@@ -43,33 +43,24 @@
 
 
 /*
- nRF24L01   AVR ATmega328(p)    Description
- SCK        PB5 (SCK)           SPI clock signal
- MISO       PB4 (MISO)          SPI master in, slave out
- MOSI       PB3 (MOSI)          SPI master out, slave in
- CSN        PB1                 SPI Chip Select
- CE         PB0                 Chip Enable Activates RX or TX mode
- IRQ        PD6 (PCINT22)       Interrupt pin. Active low
+ nRF24L01   AVR ATmega328(p)	Description
+ SCK        PB5 (SCK)			SPI clock signal
+ MISO       PB4 (MISO)			SPI master in, slave out
+ MOSI       PB3 (MOSI)			SPI master out, slave in
+ CSN        PORTD3				SPI Chip Select
+ CE         PORTD4				Chip Enable Activates RX or TX mode
+ IRQ        PORTD2 (INT0)		Interrupt pin. Active low
  */
 
-
-typedef struct
-{
-    GPIO_TypeDef CSN_Pin;
-    GPIO_TypeDef CSN_Port;
-    GPIO_TypeDef CE_Pin;
-    
-} NRF24L01_PinsTypeDef;
-
 // Pin definitions for chip select and chip enabled of the MiRF module
-#define CE  PB0
-#define CSN PB1
+#define CE  PORTD4
+#define CSN PORTD3
 
 // Definitions for selecting and enabling MiRF module
-#define mirf_CSN_hi     PORTB |=  (1<<CSN);
-#define mirf_CSN_lo     PORTB &= ~(1<<CSN);
-#define mirf_CE_hi      PORTB |=  (1<<CE);
-#define mirf_CE_lo      PORTB &= ~(1<<CE);
+#define mirf_CSN_hi     PORTD |=  (1<<CSN);
+#define mirf_CSN_lo     PORTD &= ~(1<<CSN);
+#define mirf_CE_hi      PORTD |=  (1<<CE);
+#define mirf_CE_lo      PORTD &= ~(1<<CE);
 
 // Public standart functions
 extern void mirf_init();

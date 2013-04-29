@@ -24,11 +24,11 @@
     $Id$
 */
 
-#include "mirf.h"
-#include "nRF24L01.h"
-#include "spi.h"
 #include <avr/io.h>
 #include <avr/interrupt.h>
+#include <NRF24L01/nrf24l01_register_map.h>
+#include <atmega328x/spi.h>
+#include "mirf.h"
 
 // Defines for setting the MiRF registers for transmitting or receiving mode
 #define TX_POWERUP mirf_config_register(CONFIG, mirf_CONFIG | ( (1<<PWR_UP) | (0<<PRIM_RX) ) )
@@ -38,12 +38,29 @@
 // Flag which denotes transmitting mode
 volatile uint8_t PTX;
 
+
+static void spi_transfer_sync(uint8_t *dataout, uint8_t *datain, uint8_t len)
+{
+	for (uint8_t i = 0; i < mirf_PAYLOAD; i++)
+	{
+		datain[i] = SPI_WriteRead(dataout[i]);
+	}
+}
+
+static void spi_transmit_sync(uint8_t * dataout, uint8_t len)
+{
+	for (uint8_t i = 0; i < mirf_PAYLOAD; i++)
+	{
+		SPI_WriteRead(dataout[i]);
+	}
+}
+
 void mirf_init() 
 // Initializes pins ans interrupt to communicate with the MiRF module
 // Should be called in the early initializing phase at startup.
 {
     // Define CSN and CE as Output and set them to default
-    DDRB |= ((1<<CSN)|(1<<CE));
+    DDRD |= ((1 << CSN) | (1 << CE));
     mirf_CE_lo;
     mirf_CSN_hi;
 
@@ -58,10 +75,20 @@ void mirf_init()
     DDRB &= ~(1<<PD6);
     PCMSK2 = (1<<PCINT22);
     PCICR  = (1<<PCIE2);
-#endif // __AVR_ATmega168__    
+#endif // __AVR_ATmega168__
+
+#if defined(__AVR_ATmega328P__)
+	PORTD &= ~(1 << PORTD2);
+	EICRA &= ~((1 << ISC00) | (1 << ISC01));
+	EICRA |= (ISC01); // The falling edge of INT0 generates an interrupt request.
+	EIMSK |= (1 << INT0);
+	sei();
+#endif // __AVR_ATmega328P__
 
     // Initialize spi module
-    spi_init();
+    SPI_InitTypeDef spiInit;
+    spiInit.SPI_Clock = SPI_CLOCK_DIV2;
+    SPI_Init(&spiInit);
 }
 
 
@@ -100,7 +127,10 @@ SIGNAL(SIG_INTERRUPT0)
 #endif // __AVR_ATmega8__
 #if defined(__AVR_ATmega168__)
 SIGNAL(SIG_PIN_CHANGE2) 
-#endif // __AVR_ATmega168__  
+#endif // __AVR_ATmega168__
+#if defined(__AVR_ATmega328P__)
+ISR (INT0_vect)
+#endif // __AVR_ATmega328P__
 // Interrupt handler 
 {
     uint8_t status;   
@@ -109,7 +139,7 @@ SIGNAL(SIG_PIN_CHANGE2)
     
         // Read MiRF status 
         mirf_CSN_lo;                                // Pull down chip select
-        status = spi_fast_shift(NOP);               // Read status register
+        status = SPI_WriteRead(NOP);               // Read status register
         mirf_CSN_hi;                                // Pull up chip select
 
         mirf_CE_lo;                             // Deactivate transreceiver
@@ -129,7 +159,7 @@ extern uint8_t mirf_data_ready()
     uint8_t status;
     // Read MiRF status 
     mirf_CSN_lo;                                // Pull down chip select
-    status = spi_fast_shift(NOP);               // Read status register
+    status = SPI_WriteRead(NOP);               // Read status register
     mirf_CSN_hi;                                // Pull up chip select
     return status & (1<<RX_DR);
 }
@@ -138,7 +168,13 @@ extern void mirf_get_data(uint8_t * data)
 // Reads mirf_PAYLOAD bytes into data array
 {
     mirf_CSN_lo;                               // Pull down chip select
-    spi_fast_shift( R_RX_PAYLOAD );            // Send cmd to read rx payload
+    SPI_WriteRead(R_RX_PAYLOAD);            // Send cmd to read rx payload
+	
+	for (uint8_t i = 0; i < mirf_PAYLOAD; i++)
+	{
+		data[i] = SPI_WriteRead(data[i]);
+	}
+	
     spi_transfer_sync(data,data,mirf_PAYLOAD); // Read payload
     mirf_CSN_hi;                               // Pull up chip select
     mirf_config_register(STATUS,(1<<RX_DR));   // Reset status register
@@ -148,8 +184,8 @@ void mirf_config_register(uint8_t reg, uint8_t value)
 // Clocks only one byte into the given MiRF register
 {
     mirf_CSN_lo;
-    spi_fast_shift(W_REGISTER | (REGISTER_MASK & reg));
-    spi_fast_shift(value);
+    SPI_WriteRead(W_REGISTER | (REGISTER_MASK & reg));
+    SPI_WriteRead(value);
     mirf_CSN_hi;
 }
 
@@ -157,7 +193,7 @@ void mirf_read_register(uint8_t reg, uint8_t * value, uint8_t len)
 // Reads an array of bytes from the given start position in the MiRF registers.
 {
     mirf_CSN_lo;
-    spi_fast_shift(R_REGISTER | (REGISTER_MASK & reg));
+    SPI_WriteRead(R_REGISTER | (REGISTER_MASK & reg));
     spi_transfer_sync(value,value,len);
     mirf_CSN_hi;
 }
@@ -166,7 +202,7 @@ void mirf_write_register(uint8_t reg, uint8_t * value, uint8_t len)
 // Writes an array of bytes into inte the MiRF registers.
 {
     mirf_CSN_lo;
-    spi_fast_shift(W_REGISTER | (REGISTER_MASK & reg));
+    SPI_WriteRead(W_REGISTER | (REGISTER_MASK & reg));
     spi_transmit_sync(value,len);
     mirf_CSN_hi;
 }
@@ -184,11 +220,11 @@ void mirf_send(uint8_t * value, uint8_t len)
     TX_POWERUP;                     // Power up
     
     mirf_CSN_lo;                    // Pull down chip select
-    spi_fast_shift( FLUSH_TX );     // Write cmd to flush tx fifo
+    SPI_WriteRead(FLUSH_TX);     // Write cmd to flush tx fifo
     mirf_CSN_hi;                    // Pull up chip select
     
     mirf_CSN_lo;                    // Pull down chip select
-    spi_fast_shift( W_TX_PAYLOAD ); // Write cmd to write payload
+    SPI_WriteRead(W_TX_PAYLOAD); // Write cmd to write payload
     spi_transmit_sync(value,len);   // Write payload
     mirf_CSN_hi;                    // Pull up chip select
     
