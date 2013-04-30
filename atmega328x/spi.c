@@ -94,6 +94,8 @@ void SPI_Init(SPI_InitTypeDef* SPI_InitStruct)
  */
 void SPI_Write(uint8_t Data)
 {
+	static uint8_t count = 0;
+	count++;
 	// Start Transmission
 	SPDR = Data;
 	// Wait for transmission complete

@@ -8,6 +8,13 @@
  ******************************************************************************
  */
 
+/*
+TODO:
+- Buffer for each pipe where you can do like, dataAvailableInPipe(3), getDataFromPipe(3)
+- NRF24L01_Write(), so the user don't have to think about splitting the data into payloads
+- Implement how different addresses are handled
+*/
+
 /* Includes ------------------------------------------------------------------*/
 #include <avr/io.h>
 #include <util/delay.h>
@@ -38,10 +45,11 @@
 #define RESET_STATUS NRF24L01_WriteRegisterOneByte(STATUS, (1 << TX_DS) | (1 << MAX_RT))
 
 #define DEFAULT_CHANNEL		66
-#define DEFAULT_PAYLOAD		32
-#define CONFIG_VALUE		((1<<MASK_RX_DR) | (1<<EN_CRC) | (0<<CRCO))
+
+#define CONFIG_VALUE		((1 << MASK_RX_DR) | (1 << EN_CRC) | (0 << CRCO))
 
 #define TIMEOUT_WRITE		500
+#define TX_MODE_TIMEOUT		500
 
 
 /* Private variables ---------------------------------------------------------*/
@@ -80,7 +88,7 @@ void NRF24L01_Init()
 	NRF24L01_SetRFChannel(DEFAULT_CHANNEL);
 
 	// Set length of incoming payload
-	NRF24L01_WriteRegisterOneByte(RX_PW_P0, DEFAULT_PAYLOAD);
+	NRF24L01_WriteRegisterOneByte(RX_PW_P0, PAYLOAD_SIZE);
 
 	// Flush buffers
 	NRF24L01_FlushTX();
@@ -101,40 +109,70 @@ void NRF24L01_Init()
  * @note	W_TX_PAYLOAD commands wants LSByte first but Data is MSByte so the for loop is backwards
  *			Send as much data as defined in the payload
  */
-void NRF24L01_Write(uint8_t* Data, uint8_t ByteCount)
+void NRF24L01_WritePayload(uint8_t* Data, uint8_t ByteCount)
 {
+	// You can only send the amount of data specified in MAX_DATA_COUNT
+	if (ByteCount > MAX_DATA_COUNT) return;
+	
 	uint16_t timeOfEnter = millis16bit();
-    while (_inTxMode)
-	{
-		if (millis16bit() - timeOfEnter >= TIMEOUT_WRITE)
-		{
-			DISABLE_RF;
-			RX_POWERUP;
-			ENABLE_RF;
-			_inTxMode = 0;
-			RESET_STATUS;
-			
-			return;
-		}
-	}
+	// Wait until last payload is sent
+    while (_inTxMode);
+// 	{
+// 		if ((NRF24L01_GetStatus() & ((1 << TX_DS)  | (1 << MAX_RT))))
+// 		{
+// 			_inTxMode = 0;
+// 			break;
+// 		}
+// 		
+// /*		if (millis16bit() - timeOfEnter >= TIMEOUT_WRITE) NRF24L01_ResetToRx();*/
+// 	}
 		
     DISABLE_RF;
-
-    _inTxMode = 1;
-    TX_POWERUP;
-    
+	NRF24L01_PowerUpTx();
 	NRF24L01_FlushTX();
     
     SELECT_NRF24L01;
-    SPI_WriteRead(W_TX_PAYLOAD);
-	for (uint8_t i = 0; i < DEFAULT_PAYLOAD; i++)
-	{
-		Data[i] = SPI_WriteRead(Data[i]);
-	}
-	
+    SPI_Write(W_TX_PAYLOAD);
+	SPI_Write(ByteCount);
+	uint8_t i;
+	for (i = 0; i < ByteCount; i++) SPI_Write(Data[i]);
+	for (; i < MAX_DATA_COUNT; i++) SPI_Write(PAYLOAD_FILLER_DATA);
     DESELECT_NRF24L01;
     
     ENABLE_RF;
+}
+
+
+void NRF24L01_PowerUpRx()
+{
+	_inTxMode = 0;
+	NRF24L01_WriteRegisterOneByte(CONFIG, CONFIG_VALUE | ((1 << PWR_UP) | (1 << PRIM_RX)));
+	NRF24L01_WriteRegisterOneByte(STATUS, (1 << TX_DS) | (1 << MAX_RT));
+	//_delay_us(50);		// NOT GOOD!!!
+}
+
+void NRF24L01_PowerUpTx()
+{
+	_inTxMode = 1;
+	NRF24L01_WriteRegisterOneByte(CONFIG, CONFIG_VALUE | ((1 << PWR_UP) | (0 << PRIM_RX)));
+}
+
+uint8_t NRF24L01_IsSending()
+{
+	uint8_t status;
+	if (_inTxMode)
+	{
+		status = NRF24L01_GetStatus();
+		// if sending successful (TX_DS) or max retries exceeded (MAX_RT)
+		if ((status & ((1 << TX_DS)  | (1 << MAX_RT))))
+		{
+			NRF24L01_PowerUpRx();
+			return 0;
+		}
+
+		return 1;
+	}
+	return 0;
 }
 
 
@@ -257,7 +295,7 @@ void NRF24L01_ReadRegister(uint8_t Register, uint8_t* Storage, uint8_t ByteCount
 	{
 		SELECT_NRF24L01;
 		uint8_t status = SPI_WriteRead(R_REGISTER | Register);
-		for (uint8_t i = 0; i < DEFAULT_PAYLOAD; i++)
+		for (uint8_t i = 0; i < PAYLOAD_SIZE; i++)
 		{
 			Storage[i] = SPI_WriteRead(Storage[i]);
 		}
@@ -278,7 +316,7 @@ void NRF24L01_WriteRegister(uint8_t Register, uint8_t* Data, uint8_t ByteCount)
 	{
 		SELECT_NRF24L01;
 		uint8_t status = SPI_WriteRead(W_REGISTER | Register);
-		for (uint8_t i = 0; i < DEFAULT_PAYLOAD; i++)
+		for (uint8_t i = 0; i < PAYLOAD_SIZE; i++)
 		{
 			SPI_WriteRead(Data[i]);
 		}
@@ -334,6 +372,21 @@ void NRF24L01_FlushRX()
 	DESELECT_NRF24L01;
 }
 
+/**
+ * @brief	Reset everything and power up as a receiver
+ * @param	None
+ * @retval	None
+ */
+void NRF24L01_ResetToRx()
+{
+	DISABLE_RF;
+	RX_POWERUP;
+	ENABLE_RF;
+	_inTxMode = 0;
+		
+	RESET_STATUS;
+}
+
 
 
 void mirf_set_RADDR(uint8_t * adr)
@@ -353,7 +406,13 @@ void mirf_set_TADDR(uint8_t * adr)
 uint8_t mirf_data_ready()
 // Checks if data is available for reading
 {
-	if (_inTxMode) return 0;
+	static uint16_t timeoutTimer = 0;
+	if (_inTxMode)
+	{
+		if (millis16bit() - timeoutTimer >= TX_MODE_TIMEOUT) NRF24L01_ResetToRx();
+		return 0;
+	}
+	
 	uint8_t status;
 	// Read MiRF status
 	SELECT_NRF24L01;                                // Pull down chip select
@@ -362,43 +421,39 @@ uint8_t mirf_data_ready()
 	return status & (1<<RX_DR);
 }
 
-void mirf_get_data(uint8_t* Storage)
+uint8_t NRF24L01_GetData(uint8_t* Storage)
 // Reads DEFAULT_PAYLOAD bytes into data array
 {
 	SELECT_NRF24L01;                               // Pull down chip select
 	SPI_WriteRead(R_RX_PAYLOAD);            // Send cmd to read rx payload
-	
-	for (uint8_t i = 0; i < DEFAULT_PAYLOAD; i++)
+	uint8_t dataCount = SPI_WriteRead(PAYLOAD_FILLER_DATA);	
+	for (uint8_t i = 0; i < dataCount; i++)
 	{
-		Storage[i] = SPI_WriteRead(Storage[i]);
-	}
-	
-	for (uint8_t i = 0; i < DEFAULT_PAYLOAD; i++)
-	{
-		Storage[i] = SPI_WriteRead(Storage[i]);
+		Storage[i] = SPI_WriteRead(PAYLOAD_FILLER_DATA);
 	}
 	DESELECT_NRF24L01;                               // Pull up chip select
-	NRF24L01_WriteRegisterOneByte(STATUS,(1<<RX_DR));   // Reset status register
+	NRF24L01_FlushRX();
+	NRF24L01_WriteRegisterOneByte(STATUS, (1<<RX_DR));   // Reset status register
+	return dataCount;
 }
-
-
 
 
 /* Interrupt Service Routines ------------------------------------------------*/
 ISR (INT0_vect)
 {
-/*	uint8_t status;*/
-	if (_inTxMode)
+	volatile uint8_t status = NRF24L01_GetStatus();
+// 	if (_inTxMode)
+// 	{
+// 		NRF24L01_ResetToRx();
+// 	}
+	// Data Sent TX FIFO interrupt, asserted when packet transmitted on TX.
+	if (status & (1 << TX_DS))
 	{
-// 		SELECT_NRF24L01;
-// 		status = SPI_WriteRead(NOP);
-// 		DESELECT_NRF24L01;
-
-		DISABLE_RF;
-		RX_POWERUP;
-		ENABLE_RF;
-		_inTxMode = 0;
-		
-		RESET_STATUS;
+		NRF24L01_PowerUpRx();
+	}
+	// Maximum number of TX retransmits interrupt
+	else if (status & (1 << MAX_RT))
+	{
+		NRF24L01_PowerUpRx();
 	}
 }
