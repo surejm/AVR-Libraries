@@ -42,16 +42,7 @@ void circularBuffer_Init(volatile CircularBuffer_TypeDef* CircularBuffer)
 void circularBuffer_Insert(volatile CircularBuffer_TypeDef* CircularBuffer, CIRCULARBUFFER_DATATYPE Data)
 {
 	*CircularBuffer->in = Data;
-    
-    // TODO
-    // Replace pointers with Better version taken from arduino
-    // Still use atomic block
-    //CIRCULARBUFFER_COUNTTYPE newHead = CircularBuffer->head = (CircularBuffer->head + 1) % CIRCULARBUFFER_SIZE;
-    // If the buffer is full, wait until a new item can be inserted
-    //while (newHead == CircularBuffer->tail);
-    //CircularBuffer->data[CircularBuffer->head] = Data;
-    //CircularBuffer->head = newHead;
-    
+		
 	if (++CircularBuffer->in == &CircularBuffer->data[CIRCULARBUFFER_SIZE])
 		CircularBuffer->in = CircularBuffer->data;
 	// Use atomic in case the count is bigger than 1 byte
@@ -62,17 +53,14 @@ void circularBuffer_Insert(volatile CircularBuffer_TypeDef* CircularBuffer, CIRC
 }
 
 /**
- * @brief	Removes an item from the end of the buffer
+ * @brief	Removes one item from the end of the buffer
  * @param	CircularBuffer: buffer to remove from
  * @retval	data removed from the end of the buffer
  */
 CIRCULARBUFFER_DATATYPE circularBuffer_Remove(volatile CircularBuffer_TypeDef* CircularBuffer)
 {
 	CIRCULARBUFFER_DATATYPE data = *CircularBuffer->out;
-	
-	// DEBUG
-	*CircularBuffer->out = 0xDD;
-    
+	    
     if (++CircularBuffer->out == &CircularBuffer->data[CIRCULARBUFFER_SIZE])
         CircularBuffer->out = CircularBuffer->data;
     // Use atomic in case the count is bigger than 1 byte
@@ -90,13 +78,7 @@ CIRCULARBUFFER_DATATYPE circularBuffer_Remove(volatile CircularBuffer_TypeDef* C
  * @retval	the count value
  */
 CIRCULARBUFFER_COUNTTYPE circularBuffer_GetCount(volatile CircularBuffer_TypeDef* CircularBuffer)
-{
-    // TODO:
-    // Replace pointers with Better version taken from arduino
-    // Still use atomic block
-    //(CIRCULARBUFFER_COUNTTYPE)(CIRCULARBUFFER_SIZE + CircularBuffer->head - CircularBuffer->tail) % CIRCULARBUFFER_SIZE;
-    
-    
+{    
 	CIRCULARBUFFER_COUNTTYPE count;
     // Use atomic in case the count is bigger than 1 byte
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE)

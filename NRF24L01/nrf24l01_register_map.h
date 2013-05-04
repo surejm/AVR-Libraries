@@ -85,6 +85,16 @@
 #define PIPE_5		0x20
 #define ALL_PIPES	(PIPE_0 | PIPE_1 | PIPE_2 | PIPE_3 | PIPE_4 | PIPE_5)
 
+#define NO_DATA_IN_PIPE	0x07
+
+#define DEFAULT_TX		0xE7E7E7E7E7
+#define DEFAULT_RX0		0xE7E7E7E7E7
+#define DEFAULT_RX1		0xC2C2C2C2C2
+#define DEFAULT_RX2		0xC2C2C2C2C3
+#define DEFAULT_RX3		0xC2C2C2C2C4
+#define DEFAULT_RX4		0xC2C2C2C2C5
+#define DEFAULT_RX5		0xC2C2C2C2C6
+
 /* Commands ------------------------------------------------------------------*/
 #define R_REGISTER    0x00
 #define W_REGISTER    0x20

@@ -37,16 +37,11 @@
  */
 typedef struct
 {
-    // TODO:
-    // Replace with arduino version
-    // CIRCULARBUFFER_COUNTTYPE head;
-    // CIRCULARBUFFER_COUNTTYPE tail;
-    
-    CIRCULARBUFFER_DATATYPE *in;							/** Pointer that points at the head where 
-                                                                data should be written */
-    CIRCULARBUFFER_DATATYPE *out;							/** Pointer that points at the tail where 
-                                                                data should be read */
-    CIRCULARBUFFER_DATATYPE data[CIRCULARBUFFER_SIZE];		/** The actual buffer */
+	CIRCULARBUFFER_DATATYPE *in;							/** Pointer that points at the head where 
+																data should be written */
+	CIRCULARBUFFER_DATATYPE *out;							/** Pointer that points at the tail where 
+																data should be read */
+	CIRCULARBUFFER_DATATYPE data[CIRCULARBUFFER_SIZE];		/** The actual buffer */
 	CIRCULARBUFFER_COUNTTYPE count;							/** A counter for how much data there is
 																in the buffer */
 	volatile uint8_t initialized;									/** Variable that is set once init has been

@@ -25,6 +25,8 @@
 #define MAX_DATA_COUNT		PAYLOAD_SIZE-1
 #define PAYLOAD_FILLER_DATA	0x00
 
+#define NRF24L01_MAX_AVAILABLE_DATA	CIRCULARBUFFER_SIZE
+
 /* Typedefs ------------------------------------------------------------------*/
 /* Function prototypes -------------------------------------------------------*/
 void NRF24L01_Init();
@@ -36,21 +38,16 @@ uint8_t NRF24L01_SetTxAddressSeparated(uint32_t AddressMSBytes, uint8_t AddressL
 uint8_t NRF24L01_SetRFChannel(uint8_t Channel);
 uint8_t NRF24L01_GetStatus();
 
-void NRF24L01_WriteRegisterOneByte(uint8_t Register, uint8_t Data);
-void NRF24L01_ReadRegister(uint8_t Register, uint8_t* Storage, uint8_t ByteCount);
-void NRF24L01_WriteRegister(uint8_t Register, uint8_t * Data, uint8_t ByteCount);
-
 uint8_t NRF24L01_GetFIFOStatus();
 uint8_t NRF24L01_TxFIFOEmpty();
-void NRF24L01_FlushTX();
-void NRF24L01_FlushRX();
 
-void NRF24L01_ResetToRx();
+void NRF24L01_EnablePipes(uint8_t Pipes);
+void NRF24L01_DisablePipes(uint8_t Pipes);
+uint8_t NRF24L01_GetPipeNumber();
+uint8_t NRF24L01_DataAvailableForPipe(uint8_t Pipe);
 
+void NRF24L01_GetDataFromPipe(uint8_t Pipe, uint8_t* Storage, uint8_t DataCount);
 
-void mirf_set_RADDR(uint8_t * adr);
-void mirf_set_TADDR(uint8_t * adr);
-uint8_t mirf_data_ready();
-uint8_t NRF24L01_GetData(uint8_t* Storage);
+void NRF24L01_WriteDebugToUart();
 
 #endif /* _MIRF_H_ */

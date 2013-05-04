@@ -97,7 +97,7 @@ void UART_WriteString(const char* String)
 
 void UART_WriteUintAsString(uint8_t theUint)
 {
-	char str[3];
+	char str[4];
 	utoa(theUint, str, 10);
 	UART_WriteString(str);
 }

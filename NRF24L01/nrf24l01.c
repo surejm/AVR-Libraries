@@ -20,10 +20,21 @@ TODO:
 #include <util/delay.h>
 #include <avr/interrupt.h>
 #include <atmega328x/spi.h>
+#include <atmega328x/uart.h>
+#include <circularBuffer/circularBuffer.h>
+#include <MILLIS_COUNT/millis_count.h>
 #include "nrf24l01_register_map.h"
 #include "nrf24l01.h"
 
 /* Private defines -----------------------------------------------------------*/
+// DEV
+#define TOGGLE_LED_1	(PORTB ^= (1 << PORTB2))
+#define TOGGLE_LED_2	(PORTC ^= (1 << PORTC0))
+#define TOGGLE_LED_3	(PORTC ^= (1 << PORTC1))
+#define TOGGLE_LED_4	(PORTD ^= (1 << PORTD5))
+#define TOGGLE_LED_5	(PORTD ^= (1 << PORTD6))
+
+
 #define CE_PIN			PORTD4
 #define CE_DDR			DDRD
 #define CE_PORT			PORTD
@@ -40,21 +51,47 @@ TODO:
 #define IRQ_DDR			DDRD
 #define IRQ_PORT		PORTD
 
-#define TX_POWERUP NRF24L01_WriteRegisterOneByte(CONFIG, CONFIG_VALUE | ((1 << PWR_UP) | (0 << PRIM_RX)))
-#define RX_POWERUP NRF24L01_WriteRegisterOneByte(CONFIG, CONFIG_VALUE | ((1 << PWR_UP) | (1 << PRIM_RX)))
-#define RESET_STATUS NRF24L01_WriteRegisterOneByte(STATUS, (1 << TX_DS) | (1 << MAX_RT))
+#define TX_POWERUP			NRF24L01_WriteRegisterOneByte(CONFIG, CONFIG_VALUE | ((1 << PWR_UP) | (0 << PRIM_RX)))
+#define RX_POWERUP			NRF24L01_WriteRegisterOneByte(CONFIG, CONFIG_VALUE | ((1 << PWR_UP) | (1 << PRIM_RX)))
+#define RESET_STATUS		NRF24L01_WriteRegisterOneByte(STATUS, (1 << TX_DS) | (1 << MAX_RT))
+#define RESET_STATUS_RX_DR  NRF24L01_WriteRegisterOneByte(STATUS, (1 << RX_DR))
+#define RESET_STATUS_ALL	NRF24L01_WriteRegisterOneByte(STATUS, (1 << TX_DS) | (1 << MAX_RT) | (1 << RX_DR))
+
+#define IS_VALID_PIPE(PIPE)	((PIPE) < 6)
+#define GetPipeNumber (((NRF24L01_GetStatus()) & 0xF) >> 1)
+#define GetPipeFromStatus(THE_STATUS) (((THE_STATUS) & 0xF) >> 1)
 
 #define DEFAULT_CHANNEL		66
 
-#define CONFIG_VALUE		((1 << MASK_RX_DR) | (1 << EN_CRC) | (0 << CRCO))
+//#define CONFIG_VALUE		((1 << MASK_RX_DR) | (1 << EN_CRC) | (0 << CRCO))
+#define CONFIG_VALUE		((1 << EN_CRC) | (0 << CRCO))		 // Test with RX data ready interrupt
 
 #define TIMEOUT_WRITE		500
 #define TX_MODE_TIMEOUT		500
 
+#define MAX_PIPES			6
+
 
 /* Private variables ---------------------------------------------------------*/
 volatile uint8_t _inTxMode;
-/* Private functions ---------------------------------------------------------*/
+volatile CircularBuffer_TypeDef _rxPipeBuffer[6];
+
+/* Private Function Prototypes -----------------------------------------------*/
+static void NRF24L01_WriteRegisterOneByte(uint8_t Register, uint8_t Data);
+static void NRF24L01_ReadRegister(uint8_t Register, uint8_t* Storage, uint8_t ByteCount);
+static void NRF24L01_WriteRegister(uint8_t Register, uint8_t * Data, uint8_t ByteCount);
+
+static void NRF24L01_FlushTX();
+static void NRF24L01_FlushRX();
+static void NRF24L01_ResetToRx();
+
+static uint8_t NRF24L01_GetData(uint8_t* Storage);
+static uint8_t NRF24L01_DataReady();
+
+static void NRF24L01_PowerUpRx();
+static void NRF24L01_PowerUpTx();
+
+
 /* Functions -----------------------------------------------------------------*/
 
 /**
@@ -65,6 +102,11 @@ volatile uint8_t _inTxMode;
  */
 void NRF24L01_Init() 
 {
+	for (uint8_t i = 0; i < MAX_PIPES; i++)
+	{
+		circularBuffer_Init(&_rxPipeBuffer[i]);
+	}
+	
 	CE_DDR |= (1 << CE_PIN);
 	CSN_DDR |= (1 << CSN_PIN);
 	DISABLE_RF;
@@ -89,11 +131,19 @@ void NRF24L01_Init()
 
 	// Set length of incoming payload
 	NRF24L01_WriteRegisterOneByte(RX_PW_P0, PAYLOAD_SIZE);
+	NRF24L01_WriteRegisterOneByte(RX_PW_P1, PAYLOAD_SIZE);
+	NRF24L01_WriteRegisterOneByte(RX_PW_P2, PAYLOAD_SIZE);
+	NRF24L01_WriteRegisterOneByte(RX_PW_P3, PAYLOAD_SIZE);
+	NRF24L01_WriteRegisterOneByte(RX_PW_P4, PAYLOAD_SIZE);
+	NRF24L01_WriteRegisterOneByte(RX_PW_P5, PAYLOAD_SIZE);
+	
+	// Enable all RX pipes
+	NRF24L01_EnablePipes(ALL_PIPES);
 
 	// Flush buffers
 	NRF24L01_FlushTX();
 	NRF24L01_FlushRX();
-	RESET_STATUS;
+	RESET_STATUS_ALL;
 
 	// Start receiver
 	_inTxMode = 0;        // Start in receiving mode
@@ -114,7 +164,7 @@ void NRF24L01_WritePayload(uint8_t* Data, uint8_t ByteCount)
 	// You can only send the amount of data specified in MAX_DATA_COUNT
 	if (ByteCount > MAX_DATA_COUNT) return;
 	
-	uint16_t timeOfEnter = millis16bit();
+	//uint16_t timeOfEnter = millis16bit();
 	// Wait until last payload is sent
     while (_inTxMode);
 // 	{
@@ -140,21 +190,6 @@ void NRF24L01_WritePayload(uint8_t* Data, uint8_t ByteCount)
     DESELECT_NRF24L01;
     
     ENABLE_RF;
-}
-
-
-void NRF24L01_PowerUpRx()
-{
-	_inTxMode = 0;
-	NRF24L01_WriteRegisterOneByte(CONFIG, CONFIG_VALUE | ((1 << PWR_UP) | (1 << PRIM_RX)));
-	NRF24L01_WriteRegisterOneByte(STATUS, (1 << TX_DS) | (1 << MAX_RT));
-	//_delay_us(50);		// NOT GOOD!!!
-}
-
-void NRF24L01_PowerUpTx()
-{
-	_inTxMode = 1;
-	NRF24L01_WriteRegisterOneByte(CONFIG, CONFIG_VALUE | ((1 << PWR_UP) | (0 << PRIM_RX)));
 }
 
 uint8_t NRF24L01_IsSending()
@@ -188,21 +223,21 @@ uint8_t NRF24L01_SetRxPipeAddressSeparated(uint8_t Pipe, uint32_t AddressMSBytes
 	if (Pipe <= 1)
 	{
 		SELECT_NRF24L01;
-		uint8_t status = SPI_WriteRead(W_REGISTER | (10 + Pipe));
-		SPI_WriteRead(AddressLSByte);		
+		uint8_t status = SPI_WriteRead(W_REGISTER | (RX_ADDR_P0 + Pipe));
+		SPI_Write(AddressLSByte);
 		for (uint8_t i = 0; i < 4; i++)
 		{
-			SPI_WriteRead((AddressMSBytes >> 8*i) & 0xFF);
+			SPI_Write((AddressMSBytes >> 8*i) & 0xFF);
 		}
 		DESELECT_NRF24L01;
 		
 		return status;
 	}
-	else if (Pipe <= 5)
+	else if (IS_VALID_PIPE(Pipe))
 	{
 		SELECT_NRF24L01;
 		uint8_t status = SPI_WriteRead(W_REGISTER | (RX_ADDR_P0 + Pipe));
-		SPI_WriteRead(AddressLSByte);	// MSByte of address in pipe 2 to 5 is equal to RX_ADDR_P1[39:8]
+		SPI_Write(AddressLSByte);	// MSByte of address in pipe 2 to 5 is equal to RX_ADDR_P1[39:8]
 		DESELECT_NRF24L01;
 		
 		return status;
@@ -265,66 +300,6 @@ uint8_t NRF24L01_GetStatus()
 }
 
 /**
- * @brief	Write one byte to a register in the nRF24L01
- * @param	Register: The register to read from
- * @param	Data: The byte to write
- * @retval	None
- */
-void NRF24L01_WriteRegisterOneByte(uint8_t Register, uint8_t Data)
-{
-	if (IS_VALID_REGISTER(Register))
-	{
-		SELECT_NRF24L01;
-		SPI_WriteRead(W_REGISTER | (REGISTER_MASK & Register));
-		SPI_WriteRead(Data);
-		DESELECT_NRF24L01;
-	}		
-}
-
-/**
- * @brief	Reads data from a register in the nRF24L01
- * @param	Register: The register to read from
- * @param	Storage: Pointer to where to store the read data
- * @param	ByteCount: How many bytes to read
- * @retval	The status register
- * @note	LSByte is read first
- */
-void NRF24L01_ReadRegister(uint8_t Register, uint8_t* Storage, uint8_t ByteCount)
-{
-	if (IS_VALID_REGISTER(Register))
-	{
-		SELECT_NRF24L01;
-		uint8_t status = SPI_WriteRead(R_REGISTER | Register);
-		for (uint8_t i = 0; i < PAYLOAD_SIZE; i++)
-		{
-			Storage[i] = SPI_WriteRead(Storage[i]);
-		}
-		DESELECT_NRF24L01;
-	}	
-}
-
-/**
- * @brief	Write data to a register in the nRF24L01
- * @param	Register: The register to read from
- * @param	Storage: Pointer to where to store the read data
- * @param	ByteCount: How many bytes to read
- * @retval	None
- */
-void NRF24L01_WriteRegister(uint8_t Register, uint8_t* Data, uint8_t ByteCount)
-{
-	if (IS_VALID_REGISTER(Register))
-	{
-		SELECT_NRF24L01;
-		uint8_t status = SPI_WriteRead(W_REGISTER | Register);
-		for (uint8_t i = 0; i < PAYLOAD_SIZE; i++)
-		{
-			SPI_WriteRead(Data[i]);
-		}
-		DESELECT_NRF24L01;
-	}	
-}
-
-/**
  * @brief	Get the TX FIFO status
  * @param	None
  * @retval	The TX FIFO status
@@ -349,11 +324,229 @@ uint8_t NRF24L01_TxFIFOEmpty()
 }
 
 /**
+ * @brief	Enable the specified pipes on nRF24L01
+ * @param	Pipes: The pipes that should be enabled
+ * @retval	The status register
+ */
+void NRF24L01_EnablePipes(uint8_t Pipes)
+{
+	if (Pipes <= 0x3F)
+	{
+		uint8_t pipeValue;
+		NRF24L01_ReadRegister(EN_RXADDR, &pipeValue, 1);
+		
+		pipeValue |= (Pipes);
+		NRF24L01_WriteRegisterOneByte(EN_RXADDR, pipeValue);
+	}
+}
+
+/**
+ * @brief	Disable the specified pipes on nRF24L01
+ * @param	Pipes: The pipes that should be disabled
+ * @retval	The status register
+ */
+void NRF24L01_DisablePipes(uint8_t Pipes)
+{
+	if (Pipes <= 0x3F)
+	{
+		uint8_t pipeValue;
+		NRF24L01_ReadRegister(EN_RXADDR, &pipeValue, 1);
+		pipeValue &= ~(Pipes);
+		
+		NRF24L01_WriteRegisterOneByte(EN_RXADDR, pipeValue);
+	}
+}
+
+/**
+ * @brief	Get the pipe which there's data on
+ * @param	None
+ * @retval	The pipe number
+ */
+uint8_t NRF24L01_GetPipeNumber()
+{
+	return GetPipeNumber;
+}
+
+/**
+ * @brief	Check if a pipe has available data in it's buffer
+ * @param	Pipe: The pipe to check for data
+ * @retval	The available data for the specified pipe
+ */
+uint8_t NRF24L01_DataAvailableForPipe(uint8_t Pipe)
+{
+	if (IS_VALID_PIPE(Pipe))
+	{
+		return circularBuffer_GetCount(&_rxPipeBuffer[Pipe]);
+	}
+	return 0;
+}
+
+/**
+ * @brief	Get a certain amount of data from a specified pipe
+ * @param	Pipe: The pipe to check for data
+ * @param	Storage: Pointer to where the data should be stored
+ * @param	DataCount: The amount of data to get
+ * @retval	None
+ * @note	It's good to check that the requested amount of data is available
+			first by calling NRF24L01_DataAvailableForPipe()
+ */
+void NRF24L01_GetDataFromPipe(uint8_t Pipe, uint8_t* Storage, uint8_t DataCount)
+{
+	if (IS_VALID_PIPE(Pipe))
+	{
+		for (uint8_t i = 0; i < DataCount; i++)
+		{
+			Storage[i] = circularBuffer_Remove(&_rxPipeBuffer[Pipe]);
+		}
+	}
+}
+
+/**
+ * @brief	Write some debug info to the UART
+ * @param	None
+ * @retval	None
+ */
+void NRF24L01_WriteDebugToUart()
+{
+	UART_WriteString("------------\r");
+	uint8_t status = NRF24L01_GetStatus();
+	UART_WriteString("Status: ");
+	UART_WriteHexByte(status, 1);
+	UART_WriteString("\r");
+	
+	uint8_t pipe = NRF24L01_GetPipeNumber();
+	UART_WriteString("Pipe: ");
+	UART_WriteUintAsString(pipe);
+	UART_WriteString("\r");
+	
+	uint8_t en_rxaddr;
+	NRF24L01_ReadRegister(EN_RXADDR, &en_rxaddr, 1);
+	UART_WriteString("EN_RXADDR: ");
+	UART_WriteHexByte(en_rxaddr, 1);
+	UART_WriteString("\r");
+
+	uint8_t addrTx[5];
+	NRF24L01_ReadRegister(TX_ADDR, addrTx, 5);
+	UART_WriteString("TX_ADDR: ");
+	UART_WriteHexByte(addrTx[0], 1);
+	UART_WriteHexByte(addrTx[1], 0);
+	UART_WriteHexByte(addrTx[2], 0);
+	UART_WriteHexByte(addrTx[3], 0);
+	UART_WriteHexByte(addrTx[4], 0);
+	UART_WriteString("\r");
+
+	uint8_t addr0[5];
+	NRF24L01_ReadRegister(RX_ADDR_P0, addr0, 5);
+	UART_WriteString("RX_ADDR_P0: ");
+	UART_WriteHexByte(addr0[0], 1);
+	UART_WriteHexByte(addr0[1], 0);
+	UART_WriteHexByte(addr0[2], 0);
+	UART_WriteHexByte(addr0[3], 0);
+	UART_WriteHexByte(addr0[4], 0);
+	UART_WriteString("\r");
+
+	uint8_t addr1[5];
+	NRF24L01_ReadRegister(RX_ADDR_P1, addr1, 5);
+	UART_WriteString("RX_ADDR_P1: ");
+	UART_WriteHexByte(addr1[0], 1);
+	UART_WriteHexByte(addr1[1], 0);
+	UART_WriteHexByte(addr1[2], 0);
+	UART_WriteHexByte(addr1[3], 0);
+	UART_WriteHexByte(addr1[4], 0);
+	UART_WriteString("\r");
+
+	uint8_t addr2;
+	NRF24L01_ReadRegister(RX_ADDR_P2, &addr2, 1);
+	UART_WriteString("RX_ADDR_P2: ");
+	UART_WriteHexByte(addr2, 1);
+	UART_WriteString("\r");
+
+	uint8_t addr3;
+	NRF24L01_ReadRegister(RX_ADDR_P3, &addr3, 1);
+	UART_WriteString("RX_ADDR_P3: ");
+	UART_WriteHexByte(addr3, 1);
+	UART_WriteString("\r");
+
+	uint8_t addr4;
+	NRF24L01_ReadRegister(RX_ADDR_P4, &addr4, 1);
+	UART_WriteString("RX_ADDR_P4: ");
+	UART_WriteHexByte(addr4, 1);
+	UART_WriteString("\r");
+
+	uint8_t addr5;
+	NRF24L01_ReadRegister(RX_ADDR_P5, &addr5, 1);
+	UART_WriteString("RX_ADDR_P5: ");
+	UART_WriteHexByte(addr5, 1);
+	UART_WriteString("\r");
+}
+
+/* Private Functions ---------------------------------------------------------*/
+/**
+ * @brief	Write one byte to a register in the nRF24L01
+ * @param	Register: The register to read from
+ * @param	Data: The byte to write
+ * @retval	None
+ */
+static void NRF24L01_WriteRegisterOneByte(uint8_t Register, uint8_t Data)
+{
+	if (IS_VALID_REGISTER(Register))
+	{
+		SELECT_NRF24L01;
+		SPI_WriteRead(W_REGISTER | (REGISTER_MASK & Register));
+		SPI_WriteRead(Data);
+		DESELECT_NRF24L01;
+	}		
+}
+
+/**
+ * @brief	Reads data from a register in the nRF24L01
+ * @param	Register: The register to read from
+ * @param	Storage: Pointer to where to store the read data
+ * @param	ByteCount: How many bytes to read
+ * @retval	The status register
+ * @note	LSByte is read first
+ */
+static void NRF24L01_ReadRegister(uint8_t Register, uint8_t* Storage, uint8_t ByteCount)
+{
+	if (IS_VALID_REGISTER(Register))
+	{
+		SELECT_NRF24L01;
+		SPI_Write(R_REGISTER | Register);
+		for (uint8_t i = 0; i < ByteCount; i++)
+		{
+			Storage[i] = SPI_WriteRead(Storage[i]);
+		}
+		DESELECT_NRF24L01;
+	}	
+}
+
+/**
+ * @brief	Write data to a register in the nRF24L01
+ * @param	Register: The register to read from
+ * @param	Storage: Pointer to where to store the read data
+ * @param	ByteCount: How many bytes to read
+ * @retval	None
+ */
+static void NRF24L01_WriteRegister(uint8_t Register, uint8_t* Data, uint8_t ByteCount)
+{
+	if (IS_VALID_REGISTER(Register))
+	{
+		SELECT_NRF24L01;
+		SPI_Write(W_REGISTER | Register);
+		for (uint8_t i = 0; i < PAYLOAD_SIZE; i++)
+		{
+			SPI_WriteRead(Data[i]);
+		}
+		DESELECT_NRF24L01;
+	}	
+}
+
+/**
  * @brief	Flush the TX buffer
  * @param	None
  * @retval	None
  */
-void NRF24L01_FlushTX()
+static void NRF24L01_FlushTX()
 {
 	SELECT_NRF24L01;
 	SPI_WriteRead(FLUSH_TX);
@@ -365,7 +558,7 @@ void NRF24L01_FlushTX()
  * @param	None
  * @retval	None
  */
-void NRF24L01_FlushRX()
+static void NRF24L01_FlushRX()
 {
 	SELECT_NRF24L01;
 	SPI_WriteRead(FLUSH_RX);
@@ -377,7 +570,7 @@ void NRF24L01_FlushRX()
  * @param	None
  * @retval	None
  */
-void NRF24L01_ResetToRx()
+static void NRF24L01_ResetToRx()
 {
 	DISABLE_RF;
 	RX_POWERUP;
@@ -387,23 +580,34 @@ void NRF24L01_ResetToRx()
 	RESET_STATUS;
 }
 
-
-
-void mirf_set_RADDR(uint8_t * adr)
-// Sets the receiving address
-{
-	DISABLE_RF;
-	NRF24L01_WriteRegister(RX_ADDR_P0,adr,5);
-	ENABLE_RF;
+/**
+ * @brief	Gets data from the RX buffer
+ * @param	Storage: Pointer to where the data should be stored
+ * @retval	The amount of data received
+ */
+static uint8_t NRF24L01_GetData(uint8_t* Storage)
+{	
+	SELECT_NRF24L01;
+	SPI_WriteRead(R_RX_PAYLOAD);
+	uint8_t dataCount = SPI_WriteRead(PAYLOAD_FILLER_DATA);	
+	for (uint8_t i = 0; i < dataCount; i++)
+	{
+		Storage[i] = SPI_WriteRead(PAYLOAD_FILLER_DATA);
+	}
+	DESELECT_NRF24L01;
+	NRF24L01_FlushRX();
+	NRF24L01_WriteRegisterOneByte(STATUS, (1 << RX_DR));
+	
+	return dataCount;
 }
 
-void mirf_set_TADDR(uint8_t * adr)
-// Sets the transmitting address
-{
-	NRF24L01_WriteRegister(TX_ADDR, adr,5);
-}
-
-uint8_t mirf_data_ready()
+/**
+ * @brief	Checks if there is data available
+ * @param	None
+ * @retval	0: If no data is ready
+ * @retval	1: If data is ready
+ */
+static uint8_t NRF24L01_DataReady()
 // Checks if data is available for reading
 {
 	static uint16_t timeoutTimer = 0;
@@ -413,39 +617,38 @@ uint8_t mirf_data_ready()
 		return 0;
 	}
 	
-	uint8_t status;
-	// Read MiRF status
-	SELECT_NRF24L01;                                // Pull down chip select
-	status = SPI_WriteRead(NOP);               // Read status register
-	DESELECT_NRF24L01;                                // Pull up chip select
-	return status & (1<<RX_DR);
+	volatile uint8_t status = NRF24L01_GetStatus();
+	return (status & (1 << RX_DR));
 }
 
-uint8_t NRF24L01_GetData(uint8_t* Storage)
-// Reads DEFAULT_PAYLOAD bytes into data array
+/**
+ * @brief	Power up in RX mode
+ * @param	None
+ * @retval	None
+ */
+static void NRF24L01_PowerUpRx()
 {
-	SELECT_NRF24L01;                               // Pull down chip select
-	SPI_WriteRead(R_RX_PAYLOAD);            // Send cmd to read rx payload
-	uint8_t dataCount = SPI_WriteRead(PAYLOAD_FILLER_DATA);	
-	for (uint8_t i = 0; i < dataCount; i++)
-	{
-		Storage[i] = SPI_WriteRead(PAYLOAD_FILLER_DATA);
-	}
-	DESELECT_NRF24L01;                               // Pull up chip select
-	NRF24L01_FlushRX();
-	NRF24L01_WriteRegisterOneByte(STATUS, (1<<RX_DR));   // Reset status register
-	return dataCount;
+	_inTxMode = 0;
+	NRF24L01_WriteRegisterOneByte(CONFIG, CONFIG_VALUE | ((1 << PWR_UP) | (1 << PRIM_RX)));
+	NRF24L01_WriteRegisterOneByte(STATUS, (1 << TX_DS) | (1 << MAX_RT));
+	//_delay_us(50);		// NOT GOOD!!!
 }
 
+/**
+ * @brief	Power up in TX mode
+ * @param	None
+ * @retval	None
+ */
+static void NRF24L01_PowerUpTx()
+{
+	_inTxMode = 1;
+	NRF24L01_WriteRegisterOneByte(CONFIG, CONFIG_VALUE | ((1 << PWR_UP) | (0 << PRIM_RX)));
+}
 
 /* Interrupt Service Routines ------------------------------------------------*/
 ISR (INT0_vect)
 {
 	volatile uint8_t status = NRF24L01_GetStatus();
-// 	if (_inTxMode)
-// 	{
-// 		NRF24L01_ResetToRx();
-// 	}
 	// Data Sent TX FIFO interrupt, asserted when packet transmitted on TX.
 	if (status & (1 << TX_DS))
 	{
@@ -455,5 +658,20 @@ ISR (INT0_vect)
 	else if (status & (1 << MAX_RT))
 	{
 		NRF24L01_PowerUpRx();
+	}
+	else if (status & (1 << RX_DR))
+	{
+		volatile uint8_t pipe = GetPipeFromStatus(status);
+		if (IS_VALID_PIPE(pipe))
+		{
+			uint8_t buffer[MAX_DATA_COUNT];
+			uint8_t availableData = NRF24L01_GetData(buffer);
+			for (uint8_t i = 0; i < availableData; i++)
+			{
+				if (!circularBuffer_IsFull(&_rxPipeBuffer[pipe]))
+					circularBuffer_Insert(&_rxPipeBuffer[pipe], buffer[i]);
+			}
+		}
+		RESET_STATUS_RX_DR;
 	}
 }
