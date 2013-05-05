@@ -8,6 +8,28 @@
  ******************************************************************************
  */
 
+/* Coordinator & End Devices Addresses ---------------------------------------*/
+/*
+ *	0x EB DF AC 8(HEIGHT) 7(WIDTH)
+ *				#			<- Height = 0
+ *		#	#	#	#	#	<- Height = 1
+ *		^- Width = 1	^- Width = 5
+ *
+ *	A node below should never transmit to pipe 0 on a node above
+ */
+
+#define COORDINATOR_0_ADDRESS	0xEBDFAC8070
+
+// Height 0 -> 1 Device
+#define DEVICE_0_1_ADDRESS	0XEBDFAC8071
+
+// Height 1 -> 5 Devices
+#define DEVICE_1_1_ADDRESS	0XEBDFAC8171
+#define DEVICE_1_2_ADDRESS	0XEBDFAC8172
+#define DEVICE_1_3_ADDRESS	0XEBDFAC8173
+#define DEVICE_1_4_ADDRESS	0XEBDFAC8174
+#define DEVICE_1_5_ADDRESS	0XEBDFAC8175
+
 /* Register Map --------------------------------------------------------------*/
 #define CONFIG      0x00
 #define EN_AA       0x01

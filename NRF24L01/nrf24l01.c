@@ -75,6 +75,7 @@ TODO:
 /* Private variables ---------------------------------------------------------*/
 volatile uint8_t _inTxMode;
 volatile CircularBuffer_TypeDef _rxPipeBuffer[6];
+volatile uint16_t _checksumErrors;
 
 /* Private Function Prototypes -----------------------------------------------*/
 static void NRF24L01_WriteRegisterOneByte(uint8_t Register, uint8_t Data);
@@ -102,6 +103,8 @@ static void NRF24L01_PowerUpTx();
  */
 void NRF24L01_Init() 
 {
+	_checksumErrors = 0;
+	
 	for (uint8_t i = 0; i < MAX_PIPES; i++)
 	{
 		circularBuffer_Init(&_rxPipeBuffer[i]);
@@ -159,10 +162,10 @@ void NRF24L01_Init()
  * @note	W_TX_PAYLOAD commands wants LSByte first but Data is MSByte so the for loop is backwards
  *			Send as much data as defined in the payload
  */
-void NRF24L01_WritePayload(uint8_t* Data, uint8_t ByteCount)
+void NRF24L01_WritePayload(uint8_t* Data, uint8_t DataCount)
 {
 	// You can only send the amount of data specified in MAX_DATA_COUNT
-	if (ByteCount > MAX_DATA_COUNT) return;
+	if (DataCount > MAX_DATA_COUNT) return;
 	
 	//uint16_t timeOfEnter = millis16bit();
 	// Wait until last payload is sent
@@ -176,17 +179,19 @@ void NRF24L01_WritePayload(uint8_t* Data, uint8_t ByteCount)
 // 		
 // /*		if (millis16bit() - timeOfEnter >= TIMEOUT_WRITE) NRF24L01_ResetToRx();*/
 // 	}
-		
+	volatile uint8_t checksum = NRF24L01_GetChecksum(Data, DataCount);
+	
     DISABLE_RF;
 	NRF24L01_PowerUpTx();
 	NRF24L01_FlushTX();
     
     SELECT_NRF24L01;
     SPI_Write(W_TX_PAYLOAD);
-	SPI_Write(ByteCount);
+	SPI_Write(DataCount);	// Write data count
 	uint8_t i;
-	for (i = 0; i < ByteCount; i++) SPI_Write(Data[i]);
-	for (; i < MAX_DATA_COUNT; i++) SPI_Write(PAYLOAD_FILLER_DATA);
+	for (i = 0; i < DataCount; i++) SPI_Write(Data[i]);		// Write data
+	SPI_Write(checksum);	// Write checksum
+	for (i++; i < MAX_DATA_COUNT; i++) SPI_Write(PAYLOAD_FILLER_DATA);	// Fill the rest of the payload
     DESELECT_NRF24L01;
     
     ENABLE_RF;
@@ -372,7 +377,7 @@ uint8_t NRF24L01_GetPipeNumber()
  * @param	Pipe: The pipe to check for data
  * @retval	The available data for the specified pipe
  */
-uint8_t NRF24L01_DataAvailableForPipe(uint8_t Pipe)
+uint8_t NRF24L01_GetAvailableDataForPipe(uint8_t Pipe)
 {
 	if (IS_VALID_PIPE(Pipe))
 	{
@@ -388,7 +393,7 @@ uint8_t NRF24L01_DataAvailableForPipe(uint8_t Pipe)
  * @param	DataCount: The amount of data to get
  * @retval	None
  * @note	It's good to check that the requested amount of data is available
-			first by calling NRF24L01_DataAvailableForPipe()
+			first by calling NRF24L01_GetAvailableDataForPipe()
  */
 void NRF24L01_GetDataFromPipe(uint8_t Pipe, uint8_t* Storage, uint8_t DataCount)
 {
@@ -400,6 +405,34 @@ void NRF24L01_GetDataFromPipe(uint8_t Pipe, uint8_t* Storage, uint8_t DataCount)
 		}
 	}
 }
+
+/**
+ * @brief	Get the checksum for a package of data
+ * @param	Data: The data for which to calculate the checksum on
+ * @param	DataCount: The amount of data
+ * @retval	The calculated checksum
+ * @note	Checksum = ~(DataCount + Data1 + Data2 + ... + Data N)
+ */
+uint8_t NRF24L01_GetChecksum(uint8_t* Data, uint8_t DataCount)
+{
+	volatile uint8_t checksum = DataCount;
+	for (uint8_t i = 0; i < DataCount; i++)
+	{
+		checksum += Data[i];
+	}
+	return ~checksum;
+}
+
+/**
+ * @brief	Get the amount of checksum errors that has occurred
+ * @param	None
+ * @retval	The amount of checksum errors
+ */
+uint16_t NRF24L01_GetChecksumErrors()
+{
+	return _checksumErrors;
+}
+
 
 /**
  * @brief	Write some debug info to the UART
@@ -584,16 +617,18 @@ static void NRF24L01_ResetToRx()
  * @brief	Gets data from the RX buffer
  * @param	Storage: Pointer to where the data should be stored
  * @retval	The amount of data received
+ * @note	The checksum is checked here and if it doesn't match it will return 0 as
+ *			the amount of data
  */
 static uint8_t NRF24L01_GetData(uint8_t* Storage)
 {	
 	SELECT_NRF24L01;
 	SPI_WriteRead(R_RX_PAYLOAD);
 	uint8_t dataCount = SPI_WriteRead(PAYLOAD_FILLER_DATA);	
-	for (uint8_t i = 0; i < dataCount; i++)
+	for (uint8_t i = 0; i < dataCount + 1; i++)
 	{
 		Storage[i] = SPI_WriteRead(PAYLOAD_FILLER_DATA);
-	}
+	}	
 	DESELECT_NRF24L01;
 	NRF24L01_FlushRX();
 	NRF24L01_WriteRegisterOneByte(STATUS, (1 << RX_DR));
@@ -666,10 +701,22 @@ ISR (INT0_vect)
 		{
 			uint8_t buffer[MAX_DATA_COUNT];
 			uint8_t availableData = NRF24L01_GetData(buffer);
-			for (uint8_t i = 0; i < availableData; i++)
+			
+			uint8_t receivedChecksum = buffer[availableData];
+			uint8_t calculatedChecksum = NRF24L01_GetChecksum(buffer, availableData);
+			
+			if (receivedChecksum == calculatedChecksum)
 			{
-				if (!circularBuffer_IsFull(&_rxPipeBuffer[pipe]))
-					circularBuffer_Insert(&_rxPipeBuffer[pipe], buffer[i]);
+				for (uint8_t i = 0; i < availableData; i++)
+				{
+					if (!circularBuffer_IsFull(&_rxPipeBuffer[pipe]))
+						circularBuffer_Insert(&_rxPipeBuffer[pipe], buffer[i]);
+				}
+			}
+			else
+			{
+				// Checksum error
+				_checksumErrors++;
 			}
 		}
 		RESET_STATUS_RX_DR;

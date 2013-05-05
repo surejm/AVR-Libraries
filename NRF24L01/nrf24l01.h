@@ -44,9 +44,11 @@ uint8_t NRF24L01_TxFIFOEmpty();
 void NRF24L01_EnablePipes(uint8_t Pipes);
 void NRF24L01_DisablePipes(uint8_t Pipes);
 uint8_t NRF24L01_GetPipeNumber();
-uint8_t NRF24L01_DataAvailableForPipe(uint8_t Pipe);
-
+uint8_t NRF24L01_GetAvailableDataForPipe(uint8_t Pipe);
 void NRF24L01_GetDataFromPipe(uint8_t Pipe, uint8_t* Storage, uint8_t DataCount);
+
+uint8_t NRF24L01_GetChecksum(uint8_t* Data, uint8_t DataCount);
+uint16_t NRF24L01_GetChecksumErrors();
 
 void NRF24L01_WriteDebugToUart();
 

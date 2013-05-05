@@ -95,17 +95,24 @@ void UART_WriteString(const char* String)
 	}
 }
 
-void UART_WriteUintAsString(uint8_t theUint)
+void UART_WriteUintAsString(uint8_t Number)
 {
 	char str[4];
-	utoa(theUint, str, 10);
+	utoa(Number, str, 10);
 	UART_WriteString(str);
 }
 
-void UART_WriteInt16AsString(int16_t theInt16)
+void UART_WriteUint16AsString(uint16_t Number)
+{
+	char str[8];
+	utoa(Number, str, 10);
+	UART_WriteString(str);
+}
+
+void UART_WriteInt16AsString(int16_t Number)
 {
 	char str[10];
-	itoa(theInt16, str, 10);
+	itoa(Number, str, 10);
 	UART_WriteString(str);
 }
 
