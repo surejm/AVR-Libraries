@@ -1,20 +1,20 @@
-/*
- * tlc5947.h
- *
- * Created: 11/10/2012 7:10:32 PM
- *  Author: Hampus
- */ 
+/**
+ ******************************************************************************
+ * @file	tlc5947.h
+ * @author	Hampus Sandberg
+ * @version	0.1
+ * @date	2013-05-15
+ * @brief	Function prototypes and various "public" stuff to manage the TLC5947
+ *			LED driver
+ ******************************************************************************
+ */
 
-
+/* Define to prevent recursive inclusion -------------------------------------*/
 #ifndef TLC5947_H_
 #define TLC5947_H_
 
-#include <avr/io.h>
-#include <util/delay.h>
-#include <DELAY_VAR/delayVar.h>
-#include <atmega328x/spi.h>
-#include <COLOR _16_BIT/color_16_bit.h>
-
+/* Includes ------------------------------------------------------------------*/
+/* Defines -------------------------------------------------------------------*/
 #if !defined(BLANK_PIN) || !defined(BLANK_PORT) || !defined(BLANK_DDR)
 #error "Please define BLANK_PIN, BLANK_PORT and BLANK_DDR"
 #endif
@@ -31,12 +31,14 @@
 #ifndef NUM_OF_MODULES
 #define NUM_OF_MODULES	1
 #endif
+
 #define NUM_OF_PIXELS	16
 #define TOTAL_OF_PIXELS	(NUM_OF_MODULES*NUM_OF_PIXELS)
 
-uint8_t _tlc5947Data[NUM_OF_MODULES][72];
+/* Typedefs ------------------------------------------------------------------*/
 
-void tlc5947Setup();
+/* Function prototypes -------------------------------------------------------*/
+void TLC5947_Init();
 
 void tlc5947clearAll();
 void tlc5947setPixelRGB(const uint8_t pixel, const uint8_t module, 
@@ -53,6 +55,5 @@ void tlc5947testRGBSeperate(uint16_t delayTime);
 void tlc5947testRGBAll(uint16_t delayTime);
 void tlc5947testFadeRGBSeparate(uint16_t delayTime);
 void tlc5947testRGBWlines();
-
 
 #endif /* TLC5947_H_ */
