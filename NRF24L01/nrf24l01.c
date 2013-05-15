@@ -158,7 +158,7 @@ void NRF24L01_Init()
  * @brief	Write data and send it to the address specified in TX_ADDR
  * @param	Data: Pointer to where the data is stored
  * @param	ByteCount: The number of bytes in Data
- * @retval	The status register
+ * @retval	None
  * @note	W_TX_PAYLOAD commands wants LSByte first but Data is MSByte so the for loop is backwards
  *			Send as much data as defined in the payload
  */
@@ -166,20 +166,11 @@ void NRF24L01_WritePayload(uint8_t* Data, uint8_t DataCount)
 {
 	// You can only send the amount of data specified in MAX_DATA_COUNT
 	if (DataCount > MAX_DATA_COUNT) return;
-	
-	//uint16_t timeOfEnter = millis16bit();
+
 	// Wait until last payload is sent
     while (_inTxMode);
-// 	{
-// 		if ((NRF24L01_GetStatus() & ((1 << TX_DS)  | (1 << MAX_RT))))
-// 		{
-// 			_inTxMode = 0;
-// 			break;
-// 		}
-// 		
-// /*		if (millis16bit() - timeOfEnter >= TIMEOUT_WRITE) NRF24L01_ResetToRx();*/
-// 	}
-	volatile uint8_t checksum = NRF24L01_GetChecksum(Data, DataCount);
+	
+	uint8_t checksum = NRF24L01_GetChecksum(Data, DataCount);
 	
     DISABLE_RF;
 	NRF24L01_PowerUpTx();
@@ -191,28 +182,53 @@ void NRF24L01_WritePayload(uint8_t* Data, uint8_t DataCount)
 	uint8_t i;
 	for (i = 0; i < DataCount; i++) SPI_Write(Data[i]);		// Write data
 	SPI_Write(checksum);	// Write checksum
-	for (i++; i < MAX_DATA_COUNT; i++) SPI_Write(PAYLOAD_FILLER_DATA);	// Fill the rest of the payload
+	for (i++; i <= MAX_DATA_COUNT; i++) SPI_Write(PAYLOAD_FILLER_DATA);	// Fill the rest of the payload
     DESELECT_NRF24L01;
     
     ENABLE_RF;
 }
 
-uint8_t NRF24L01_IsSending()
-{
-	uint8_t status;
-	if (_inTxMode)
-	{
-		status = NRF24L01_GetStatus();
-		// if sending successful (TX_DS) or max retries exceeded (MAX_RT)
-		if ((status & ((1 << TX_DS)  | (1 << MAX_RT))))
-		{
-			NRF24L01_PowerUpRx();
-			return 0;
-		}
 
-		return 1;
+/**
+ * @brief	Write data of arbitrary length [0-255]
+ * @param	Data: Pointer to where the data is stored
+ * @param	ByteCount: The number of bytes in Data
+ * @retval	None
+ */
+void NRF24L01_Write(uint8_t* Data, uint8_t DataCount)
+{
+	// Only copy to good-sized parts if necessary
+	if (DataCount <= MAX_DATA_COUNT)
+	{
+		NRF24L01_WritePayload(Data, DataCount);
 	}
-	return 0;
+	else
+	{
+		uint8_t tempData[MAX_DATA_COUNT];
+		uint8_t tempDataCount = 0;
+		uint8_t payloadCount = 0;
+			
+		for (uint16_t i = 0; i < DataCount; i++)
+		{
+			tempData[i - payloadCount * (MAX_DATA_COUNT)] = Data[i];
+			tempDataCount++;
+				
+			if (tempDataCount == MAX_DATA_COUNT)
+			{
+				NRF24L01_WritePayload(tempData, tempDataCount);
+				tempDataCount = 0;
+				payloadCount += 1;
+				
+				// ERROR: Doesn't seem to work if DataCount > 60
+			}
+		}
+			
+		// If it wasn't a multiple of MAX_DATA_COUNT write the rest
+		if (tempDataCount)
+		{
+			NRF24L01_WritePayload(Data, tempDataCount);
+		}
+	}
 }
 
 
