@@ -19,8 +19,16 @@ TODO:
 #include <avr/io.h>
 #include <util/delay.h>
 #include <avr/interrupt.h>
+
+#if defined(__AVR_ATmega328P__)
 #include <atmega328x/spi.h>
 #include <atmega328x/uart.h>
+
+#elif defined(__AVR_ATmega32U2__)
+#include <atmegaxxu2/spi.h>
+#include <atmegaxxu2/uart.h>
+#endif
+
 #include <circularBuffer/circularBuffer.h>
 #include <MILLIS_COUNT/millis_count.h>
 #include "nrf24l01_register_map.h"
@@ -34,22 +42,33 @@ TODO:
 #define TOGGLE_LED_4	(PORTD ^= (1 << PORTD5))
 #define TOGGLE_LED_5	(PORTD ^= (1 << PORTD6))
 
-
-#define CE_PIN			PORTD4
-#define CE_DDR			DDRD
-#define CE_PORT			PORTD
+#if !defined(CE_PIN) && !defined(CE_DDR) && !defined(CE_PORT)
+#error "Please define CE_PIN, CE_DDR, CE_PORT in project properties"
+#endif
+// #define CE_PIN			PORTD4
+// #define CE_DDR			DDRD
+// #define CE_PORT			PORTD
 #define ENABLE_RF		(CE_PORT |= (1 << CE_PIN))
 #define DISABLE_RF		(CE_PORT &= ~(1 << CE_PIN))
 
-#define CSN_PIN			PORTD3
-#define CSN_DDR			DDRD
-#define CSN_PORT		PORTD
+#if !defined(CSN_PIN) && !defined(CSN_DDR) && !defined(CSN_PORT)
+#error "Please define CSN_PIN, CSN_DDR, CSN_PORT in project properties"
+#endif
+// #define CSN_PIN			PORTD3
+// #define CSN_DDR			DDRD
+// #define CSN_PORT		PORTD
 #define SELECT_NRF24L01		(CSN_PORT &= ~(1 << CSN_PIN))
 #define DESELECT_NRF24L01	(CSN_PORT |= (1 << CSN_PIN))
 
-#define IRQ_PIN			PORTD2	// INT0
-#define IRQ_DDR			DDRD
-#define IRQ_PORT		PORTD
+
+#if !defined(IRQ_PIN) && !defined(IRQ_DDR) && !defined(IRQ_PORT) && !defined(INTERRUPT_VECTOR) && !defined(IRQ_INTERRUPT)
+#error "Please define IRQ_PIN, IRQ_DDR, IRQ_PORT, INTERRUPT_VECTOR, IRQ_INTERRUPT in project properties"
+#endif
+// #define IRQ_PIN				PORTD2	// INT0
+// #define IRQ_DDR				DDRD
+// #define IRQ_PORT			PORTD
+// #define INTERRUPT_VECTOR	INT1_vect
+// #define IRQ_INTERRUPT		1
 
 #define TX_POWERUP			NRF24L01_WriteRegisterOneByte(CONFIG, CONFIG_VALUE | ((1 << PWR_UP) | (0 << PRIM_RX)))
 #define RX_POWERUP			NRF24L01_WriteRegisterOneByte(CONFIG, CONFIG_VALUE | ((1 << PWR_UP) | (1 << PRIM_RX)))
@@ -117,9 +136,17 @@ void NRF24L01_Init()
 
 	// Interrupt init
 	IRQ_DDR &= ~(1 << IRQ_PIN);
+	#if (IRQ_INTERRUPT == 0)
 	EICRA &= ~((1 << ISC00) | (1 << ISC01));
-	EICRA |= (ISC01); // The falling edge of INT0 generates an interrupt request.
+	EICRA |= (1 << ISC01); // The falling edge of INT0 generates an interrupt request.
 	EIMSK |= (1 << INT0);
+	
+	#elif (IRQ_INTERRUPT == 1)
+	EICRA &= ~((1 << ISC10) | (1 << ISC11));
+	EICRA |= (1 << ISC11); // The falling edge of INT1 generates an interrupt request.
+	EIMSK |= (1 << INT1);
+	#endif
+	
 	sei();
 
     // Initialize spi module
@@ -697,7 +724,7 @@ static void NRF24L01_PowerUpTx()
 }
 
 /* Interrupt Service Routines ------------------------------------------------*/
-ISR (INT0_vect)
+ISR (INTERRUPT_VECTOR)
 {
 	volatile uint8_t status = NRF24L01_GetStatus();
 	// Data Sent TX FIFO interrupt, asserted when packet transmitted on TX.
