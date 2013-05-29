@@ -31,6 +31,7 @@
 /* Function prototypes -------------------------------------------------------*/
 void NRF24L01_Init();
 void NRF24L01_WritePayload(uint8_t* Data, uint8_t ByteCount);
+void NRF24L01_Write(uint8_t* Data, uint8_t DataCount);
 
 uint8_t NRF24L01_SetRxPipeAddressSeparated(uint8_t Pipe, uint32_t AddressMSBytes, uint8_t AddressLSByte);
 uint8_t NRF24L01_SetTxAddressSeparated(uint32_t AddressMSBytes, uint8_t AddressLSByte);
@@ -50,6 +51,10 @@ void NRF24L01_GetDataFromPipe(uint8_t Pipe, uint8_t* Storage, uint8_t DataCount)
 uint8_t NRF24L01_GetChecksum(uint8_t* Data, uint8_t DataCount);
 uint16_t NRF24L01_GetChecksumErrors();
 
+uint16_t NRF24L01_GetResetCount();
+
+#ifdef NRF24L01_UART_DEBUG
 void NRF24L01_WriteDebugToUart();
+#endif /* NRF24L01_UART_DEBUG */
 
 #endif /* _MIRF_H_ */

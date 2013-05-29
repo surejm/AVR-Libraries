@@ -15,6 +15,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include <avr/io.h>
 #include <avr/interrupt.h>
+#include <avr/pgmspace.h>
 #include <stdlib.h>
 #include <assert/assert.h>
 #include <circularBuffer/circularBuffer.h>
@@ -32,6 +33,9 @@ volatile CircularBuffer_TypeDef _uartBufferRX;
 volatile UART_Status_TypeDef _uartTXstatus;
 volatile CircularBuffer_TypeDef _uartBufferTX;
 uint8_t _uartInitStatus;
+
+/* Strings located in FLASH memory */
+const char McuType[] PROGMEM = "\rATmegaxxU2\r";
 
 /* Private functions ---------------------------------------------------------*/
 
@@ -86,12 +90,29 @@ void UART_Write(const uint8_t Data)
 	UCSR1B |= (1 << UDRIE1);
 }
 
-void UART_WriteString(const char* String)
+/**
+ * @brief	Write a string to the USART
+ * @param	String: The string to write
+ * @retval	None
+ */
+void UART_WriteString(const char *String)
 {
 	while (*String != 0x00)
 	{
-		UART_Write(*String);
-		*String++;
+		UART_Write(*String++);
+	}
+}
+
+/**
+ * @brief	Write a string to the USART from FLASH memory
+ * @param	String: The string to write located in FLASH
+ * @retval	None
+ */
+void UART_WriteString_P(const char *String)
+{
+	while (pgm_read_byte(String) != 0x00)
+	{
+		UART_Write(pgm_read_byte(String++));
 	}
 }
 

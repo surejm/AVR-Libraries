@@ -72,7 +72,7 @@ void TWI_WriteRaw(const uint8_t data);
 uint8_t TWI_BeginTransmission(const uint8_t address);
 void TWI_EndTransmission();
 uint8_t TWI_Write(const uint8_t data);
-uint8_t TWI_RequestFrom(const uint8_t address, uint8_t* storage, const uint8_t byteCount);
+uint8_t TWI_RequestFrom(const uint8_t address, uint8_t* storage, const uint8_t NumByteToRead);
 
 uint8_t TWI_SlaveAtAddress(const uint8_t Address);
 uint8_t TWI_Initialized();

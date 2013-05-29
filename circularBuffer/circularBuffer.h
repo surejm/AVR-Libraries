@@ -15,11 +15,19 @@
 #define CIRCULARBUFFER_H_
 
 /* Includes ------------------------------------------------------------------*/
+/* 
+ * Put a file named "board.h" in the project root directory and add ".." as a directory
+ * Here we define CIRCULARBUFFER_SIZE, CIRCULARBUFFER_DATATYPE
+ */
+#include <board.h>
+
 /* Defines -------------------------------------------------------------------*/
 #ifndef CIRCULARBUFFER_SIZE
 #warning "CIRCULARBUFFER_SIZE is not defined. Will now define it to 64"
 #define CIRCULARBUFFER_SIZE	64
 #endif
+
+#define BUFFER_NEARLY_FULL	CIRCULARBUFFER_SIZE - 16
 
 #ifndef CIRCULARBUFFER_DATATYPE
 #warning "CIRCULARBUFFER_DATATYPE is not defined. Will now define it to volatile uint8_t"
@@ -49,11 +57,14 @@ typedef struct
 } CircularBuffer_TypeDef;
 
 /* Function prototypes -------------------------------------------------------*/
-void circularBuffer_Init(volatile CircularBuffer_TypeDef* CircularBuffer);
-void circularBuffer_Insert(volatile CircularBuffer_TypeDef* CircularBuffer, CIRCULARBUFFER_DATATYPE Data);
-CIRCULARBUFFER_DATATYPE circularBuffer_Remove(volatile CircularBuffer_TypeDef* CircularBuffer);
-CIRCULARBUFFER_COUNTTYPE circularBuffer_GetCount(volatile CircularBuffer_TypeDef* CircularBuffer);
-uint8_t circularBuffer_IsEmpty(volatile CircularBuffer_TypeDef* CircularBuffer);
-uint8_t circularBuffer_IsFull(volatile CircularBuffer_TypeDef* CircularBuffer);
+void CIRCULAR_BUFFER_Init(volatile CircularBuffer_TypeDef* CircularBuffer);
+
+void CIRCULAR_BUFFER_Insert(volatile CircularBuffer_TypeDef* CircularBuffer, CIRCULARBUFFER_DATATYPE Data);
+CIRCULARBUFFER_DATATYPE CIRCULAR_BUFFER_Remove(volatile CircularBuffer_TypeDef* CircularBuffer);
+
+CIRCULARBUFFER_COUNTTYPE CIRCULAR_BUFFER_GetCount(volatile CircularBuffer_TypeDef* CircularBuffer);
+uint8_t CIRCULAR_BUFFER_IsEmpty(volatile CircularBuffer_TypeDef* CircularBuffer);
+uint8_t CIRCULAR_BUFFER_IsFull(volatile CircularBuffer_TypeDef* CircularBuffer);
+void CIRCULAR_BUFFER_Flush(volatile CircularBuffer_TypeDef* CircularBuffer);
 
 #endif /* CIRCULARBUFFER_H_ */

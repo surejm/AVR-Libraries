@@ -66,7 +66,8 @@ typedef struct
 // void UART_Init(const uint8_t theBaudRate, void(*theUartManageFunc)(uint8_t));
 void UART_Init(UART_Init_TypeDef *UART_InitStruct);
 void UART_Write(const uint8_t Data);
-void UART_WriteString(const char* String);
+void UART_WriteString(const char *String);
+void UART_WriteString_P(const char *String);
 void UART_WriteUintAsString(uint8_t Number);
 void UART_WriteUint16AsString(uint16_t Number);
 void UART_WriteInt16AsString(int16_t Number);

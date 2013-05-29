@@ -20,14 +20,13 @@ TODO:
 #include <util/delay.h>
 #include <avr/interrupt.h>
 
-#if defined(__AVR_ATmega328P__)
-#include <atmega328x/spi.h>
-#include <atmega328x/uart.h>
-
-#elif defined(__AVR_ATmega32U2__)
-#include <atmegaxxu2/spi.h>
-#include <atmegaxxu2/uart.h>
-#endif
+/* 
+ * Put a file named "board.h" in the project root directory and add appropriate 
+ * board from the boards folder at AVR/boards.
+ * In that file we define CE_PIN, CSN_PIN etc and also include spi and uart 
+ * library for the board in use
+ */
+#include <board.h>
 
 #include <circularBuffer/circularBuffer.h>
 #include <MILLIS_COUNT/millis_count.h>
@@ -35,15 +34,8 @@ TODO:
 #include "nrf24l01.h"
 
 /* Private defines -----------------------------------------------------------*/
-// DEV
-#define TOGGLE_LED_1	(PORTB ^= (1 << PORTB2))
-#define TOGGLE_LED_2	(PORTC ^= (1 << PORTC0))
-#define TOGGLE_LED_3	(PORTC ^= (1 << PORTC1))
-#define TOGGLE_LED_4	(PORTD ^= (1 << PORTD5))
-#define TOGGLE_LED_5	(PORTD ^= (1 << PORTD6))
-
 #if !defined(CE_PIN) && !defined(CE_DDR) && !defined(CE_PORT)
-#error "Please define CE_PIN, CE_DDR, CE_PORT in project properties"
+#error "Please define CE_PIN, CE_DDR, CE_PORT in board.h"
 #endif
 // #define CE_PIN			PORTD4
 // #define CE_DDR			DDRD
@@ -52,7 +44,7 @@ TODO:
 #define DISABLE_RF		(CE_PORT &= ~(1 << CE_PIN))
 
 #if !defined(CSN_PIN) && !defined(CSN_DDR) && !defined(CSN_PORT)
-#error "Please define CSN_PIN, CSN_DDR, CSN_PORT in project properties"
+#error "Please define CSN_PIN, CSN_DDR, CSN_PORT in board.h"
 #endif
 // #define CSN_PIN			PORTD3
 // #define CSN_DDR			DDRD
@@ -62,7 +54,7 @@ TODO:
 
 
 #if !defined(IRQ_PIN) && !defined(IRQ_DDR) && !defined(IRQ_PORT) && !defined(INTERRUPT_VECTOR) && !defined(IRQ_INTERRUPT)
-#error "Please define IRQ_PIN, IRQ_DDR, IRQ_PORT, INTERRUPT_VECTOR, IRQ_INTERRUPT in project properties"
+#error "Please define IRQ_PIN, IRQ_DDR, IRQ_PORT, INTERRUPT_VECTOR, IRQ_INTERRUPT in board.h"
 #endif
 // #define IRQ_PIN				PORTD2	// INT0
 // #define IRQ_DDR				DDRD
@@ -82,19 +74,17 @@ TODO:
 
 #define DEFAULT_CHANNEL		66
 
-//#define CONFIG_VALUE		((1 << MASK_RX_DR) | (1 << EN_CRC) | (0 << CRCO))
-#define CONFIG_VALUE		((1 << EN_CRC) | (0 << CRCO))		 // Test with RX data ready interrupt
+#define CONFIG_VALUE		((1 << EN_CRC) | (0 << CRCO))
 
-#define TIMEOUT_WRITE		500
-#define TX_MODE_TIMEOUT		500
+#define TX_MODE_TIMEOUT		100
 
 #define MAX_PIPES			6
-
 
 /* Private variables ---------------------------------------------------------*/
 volatile uint8_t _inTxMode;
 volatile CircularBuffer_TypeDef _rxPipeBuffer[6];
 volatile uint16_t _checksumErrors;
+uint16_t _resetCount;
 
 /* Private Function Prototypes -----------------------------------------------*/
 static void NRF24L01_WriteRegisterOneByte(uint8_t Register, uint8_t Data);
@@ -123,10 +113,11 @@ static void NRF24L01_PowerUpTx();
 void NRF24L01_Init() 
 {
 	_checksumErrors = 0;
+	_resetCount = 0;
 	
 	for (uint8_t i = 0; i < MAX_PIPES; i++)
 	{
-		circularBuffer_Init(&_rxPipeBuffer[i]);
+		CIRCULAR_BUFFER_Init(&_rxPipeBuffer[i]);
 	}
 	
 	CE_DDR |= (1 << CE_PIN);
@@ -194,8 +185,12 @@ void NRF24L01_WritePayload(uint8_t* Data, uint8_t DataCount)
 	// You can only send the amount of data specified in MAX_DATA_COUNT
 	if (DataCount > MAX_DATA_COUNT) return;
 
-	// Wait until last payload is sent
-    while (_inTxMode);
+	// Wait until last payload is sent or timeout has occurred
+	uint16_t timeoutTimer = millis16bit();
+    while (_inTxMode)
+	{
+		if (millis16bit() - timeoutTimer >= TX_MODE_TIMEOUT) NRF24L01_ResetToRx();
+	}
 	
 	uint8_t checksum = NRF24L01_GetChecksum(Data, DataCount);
 	
@@ -424,7 +419,7 @@ uint8_t NRF24L01_GetAvailableDataForPipe(uint8_t Pipe)
 {
 	if (IS_VALID_PIPE(Pipe))
 	{
-		return circularBuffer_GetCount(&_rxPipeBuffer[Pipe]);
+		return CIRCULAR_BUFFER_GetCount(&_rxPipeBuffer[Pipe]);
 	}
 	return 0;
 }
@@ -444,7 +439,7 @@ void NRF24L01_GetDataFromPipe(uint8_t Pipe, uint8_t* Storage, uint8_t DataCount)
 	{
 		for (uint8_t i = 0; i < DataCount; i++)
 		{
-			Storage[i] = circularBuffer_Remove(&_rxPipeBuffer[Pipe]);
+			Storage[i] = CIRCULAR_BUFFER_Remove(&_rxPipeBuffer[Pipe]);
 		}
 	}
 }
@@ -476,7 +471,19 @@ uint16_t NRF24L01_GetChecksumErrors()
 	return _checksumErrors;
 }
 
+/**
+ * @brief	Get the number of times the nRF24L01 has been reset since start
+ * @param	None
+ * @retval	None
+ * @note	Can be used to see if there's problems. If two devices transmit on the same
+			address the nRF24L01 will hang and the library will do a reset
+ */
+uint16_t NRF24L01_GetResetCount()
+{
+	return _resetCount;
+}
 
+#ifdef NRF24L01_UART_DEBUG
 /**
  * @brief	Write some debug info to the UART
  * @param	None
@@ -555,6 +562,7 @@ void NRF24L01_WriteDebugToUart()
 	UART_WriteHexByte(addr5, 1);
 	UART_WriteString("\r");
 }
+#endif /* NRF24L01_UART_DEBUG */
 
 /* Private Functions ---------------------------------------------------------*/
 /**
@@ -648,12 +656,16 @@ static void NRF24L01_FlushRX()
  */
 static void NRF24L01_ResetToRx()
 {
+	_resetCount++;
+	
+	RESET_STATUS_ALL;
 	DISABLE_RF;
-	RX_POWERUP;
-	ENABLE_RF;
-	_inTxMode = 0;
-		
-	RESET_STATUS;
+	DESELECT_NRF24L01;
+
+	// Start receiver
+	_inTxMode = 0;	// Start in receiving mode
+	RX_POWERUP;		// Power up in receiving mode
+	ENABLE_RF;		// Listening for pakets
 }
 
 /**
@@ -724,7 +736,7 @@ static void NRF24L01_PowerUpTx()
 }
 
 /* Interrupt Service Routines ------------------------------------------------*/
-ISR (INTERRUPT_VECTOR)
+ISR(INTERRUPT_VECTOR)
 {
 	volatile uint8_t status = NRF24L01_GetStatus();
 	// Data Sent TX FIFO interrupt, asserted when packet transmitted on TX.
@@ -752,8 +764,8 @@ ISR (INTERRUPT_VECTOR)
 			{
 				for (uint8_t i = 0; i < availableData; i++)
 				{
-					if (!circularBuffer_IsFull(&_rxPipeBuffer[pipe]))
-						circularBuffer_Insert(&_rxPipeBuffer[pipe], buffer[i]);
+					if (!CIRCULAR_BUFFER_IsFull(&_rxPipeBuffer[pipe]))
+						CIRCULAR_BUFFER_Insert(&_rxPipeBuffer[pipe], buffer[i]);
 				}
 			}
 			else

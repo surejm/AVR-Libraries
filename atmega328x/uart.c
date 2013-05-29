@@ -15,6 +15,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include <avr/io.h>
 #include <avr/interrupt.h>
+#include <avr/pgmspace.h>
 #include <stdlib.h>
 #include <assert/assert.h>
 #include <circularBuffer/circularBuffer.h>
@@ -32,6 +33,9 @@ volatile CircularBuffer_TypeDef _uartBufferRX;
 volatile UART_Status_TypeDef _uartTXstatus;
 volatile CircularBuffer_TypeDef _uartBufferTX;
 uint8_t _uartInitStatus;
+
+/* Strings located in FLASH memory */
+const char McuType[] PROGMEM = "\rATmega328x\r";
 
 /* Private functions ---------------------------------------------------------*/
 
@@ -64,8 +68,8 @@ void UART_Init(UART_Init_TypeDef *UART_InitStruct)
 	UBRR0 = UART_InitStruct->UART_BaudRate;
 	
 	// Initialize the buffers
-	circularBuffer_Init(&_uartBufferRX);
-	circularBuffer_Init(&_uartBufferTX);
+	CIRCULAR_BUFFER_Init(&_uartBufferRX);
+	CIRCULAR_BUFFER_Init(&_uartBufferTX);
 	
 	sei();
 	_uartInitStatus = 1;
@@ -80,18 +84,35 @@ void UART_Init(UART_Init_TypeDef *UART_InitStruct)
 void UART_Write(const uint8_t Data)
 {
 	// TODO: Add timemout
-	while (circularBuffer_IsFull(&_uartBufferTX));
-	circularBuffer_Insert(&_uartBufferTX, Data);
+	while (CIRCULAR_BUFFER_IsFull(&_uartBufferTX));
+	CIRCULAR_BUFFER_Insert(&_uartBufferTX, Data);
 	// Activate the "Data Register Empty" interrupt
 	UCSR0B |= (1 << UDRIE0);
 }
 
-void UART_WriteString(const char* String)
+/**
+ * @brief	Write a string to the USART
+ * @param	String: The string to write
+ * @retval	None
+ */
+void UART_WriteString(const char *String)
 {
 	while (*String != 0x00)
 	{
-		UART_Write(*String);
-		*String++;
+		UART_Write(*String++);
+	}
+}
+
+/**
+ * @brief	Write a string to the USART from FLASH memory
+ * @param	String: The string to write located in FLASH
+ * @retval	None
+ */
+void UART_WriteString_P(const char *String)
+{
+	while (pgm_read_byte(String) != 0x00)
+	{
+		UART_Write(pgm_read_byte(String++));
 	}
 }
 
@@ -133,8 +154,8 @@ void UART_WriteHexByte(uint8_t theByte, uint8_t prefix)
  */
 uint8_t UART_Read()
 {
-	if (!circularBuffer_IsEmpty(&_uartBufferRX))
-		return circularBuffer_Remove(&_uartBufferRX);
+	if (!CIRCULAR_BUFFER_IsEmpty(&_uartBufferRX))
+		return CIRCULAR_BUFFER_Remove(&_uartBufferRX);
 	else
 	{
 		_uartRXstatus = UART_RX_BUFFER_EMPTY;
@@ -149,7 +170,7 @@ uint8_t UART_Read()
  */
 uint8_t UART_DataAvailable()
 {
-	return circularBuffer_GetCount(&_uartBufferRX);
+	return CIRCULAR_BUFFER_GetCount(&_uartBufferRX);
 }
 
 /**
@@ -193,11 +214,11 @@ uint8_t UART_Initialized()
 ISR(USART_RX_vect)
 {
 	uint8_t data = UDR0;
-	if (circularBuffer_IsFull(&_uartBufferRX))
+	if (CIRCULAR_BUFFER_IsFull(&_uartBufferRX))
 		_uartRXstatus = UART_RX_BUFFER_FULL;
 	else
 	{
-		circularBuffer_Insert(&_uartBufferRX, data);
+		CIRCULAR_BUFFER_Insert(&_uartBufferRX, data);
 		_uartRXstatus = UART_DATA_IN_RX_BUFFER;
 	}
 }
@@ -207,7 +228,7 @@ ISR(USART_RX_vect)
  */
 ISR(USART_UDRE_vect)
 {
-	if (circularBuffer_IsEmpty(&_uartBufferTX))
+	if (CIRCULAR_BUFFER_IsEmpty(&_uartBufferTX))
 	{
 		// No data to transmit so disable "Data Register Empty" interrupt
 		UCSR0B &= ~(1 << UDRIE0);
@@ -217,6 +238,6 @@ ISR(USART_UDRE_vect)
 	{
 		// Data is available so remove it from the buffer and transmit
 		_uartTXstatus = UART_TX_TRANSMITTING;
-		UDR0 = circularBuffer_Remove(&_uartBufferTX);
+		UDR0 = CIRCULAR_BUFFER_Remove(&_uartBufferTX);
 	}
 }

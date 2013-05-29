@@ -203,21 +203,21 @@ uint8_t TWI_Write(const uint8_t Data)
  * @brief	Requests a given amount of data from a slave
  * @param	Address: The address to the slave to request from
  * @param	Storage: Pointer to where the data should be stored
- * @param	ByteCount: The amount of bytes to receive
+ * @param	NumByteToRead: The amount of bytes to receive
  * @retval	10: START condition not sent
  * @retval	20: Slave address + write bit not sent
  * @retval	1: All data received
  */
-uint8_t TWI_RequestFrom(const uint8_t Address, uint8_t* Storage, const uint8_t ByteCount)
+uint8_t TWI_RequestFrom(const uint8_t Address, uint8_t* Storage, const uint8_t NumByteToRead)
 {
 	TWI_Start();
 	if (TWI_GetStatus() != TW_START) return 10; // Check if a START condition has been transmitted
 	TWI_WriteRaw(Address << 1 | 0x1); // Send the address + Read bit (1)
 	if (TWI_GetStatus() != TW_MR_SLA_ACK) return 20; // Check if SLA+W has been transmitted
 	
-	for (uint8_t i = 0; i < ByteCount - 1; i++)
+	for (uint8_t i = 0; i < NumByteToRead - 1; i++)
 		Storage[i] = TWI_ReadAck();
-	Storage[ByteCount - 1] = TWI_ReadNack();
+	Storage[NumByteToRead - 1] = TWI_ReadNack();
 	
 	TWI_Stop();
 	return 1;
