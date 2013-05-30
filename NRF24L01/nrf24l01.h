@@ -35,6 +35,7 @@ void NRF24L01_Write(uint8_t* Data, uint8_t DataCount);
 
 uint8_t NRF24L01_SetRxPipeAddressSeparated(uint8_t Pipe, uint32_t AddressMSBytes, uint8_t AddressLSByte);
 uint8_t NRF24L01_SetTxAddressSeparated(uint32_t AddressMSBytes, uint8_t AddressLSByte);
+void NRF24L01_SetAddressWidth(uint8_t Width);
 
 uint8_t NRF24L01_SetRFChannel(uint8_t Channel);
 uint8_t NRF24L01_GetStatus();

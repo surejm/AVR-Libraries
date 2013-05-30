@@ -309,6 +309,20 @@ uint8_t NRF24L01_SetTxAddressSeparated(uint32_t AddressMSBytes, uint8_t AddressL
 }
 
 /**
+ * @brief	Set the RX/TX Address field width on the nRF24L01
+ * @param	Width: The width of the address field, can be 3, 4 or 5
+ * @retval	None
+ */
+void NRF24L01_SetAddressWidth(uint8_t Width)
+{
+	if (Width == 3 || Width == 4 || Width == 5)
+	{
+		// 01: 3 bytes, 10: 4 bytes, 11: 5 bytes
+		NRF24L01_WriteRegisterOneByte(SETUP_AW, Width - 2);
+	}
+}
+
+/**
  * @brief	Set the RF channel to transmit on
  * @param	Channel: The channel
  * @retval	The status register or 0 if invalid channel
