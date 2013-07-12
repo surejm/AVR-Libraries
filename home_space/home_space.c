@@ -23,6 +23,9 @@ Command_TypeDef _commands[NUMBER_OF_COMMANDS];
 static uint8_t doCommand(uint16_t CommandId, uint8_t* Data);
 static uint8_t getBytesToReceiveForCommand(uint16_t CommandId);
 
+static void sendDownToPipe(uint8_t* InfoBytes, uint8_t* DataBytes, uint8_t Pipe);
+static void sendUp(uint8_t* InfoBytes, uint8_t* DataBytes);
+
 /* Functions -----------------------------------------------------------------*/
 /**
  * @brief	...
@@ -61,22 +64,52 @@ void HOME_SPACE_Check()
 			uint8_t dataBytes[dataCount];
 			NRF24L01_GetDataFromPipe(i, dataBytes, dataCount);
 			
+			/* Case A:
+			 * The destination is this board's address -> process the command
+			 */
 			if (destination == BOARD_ADDRESS)
 			{
 				
 			}
-			else if (ADDRESS_HEIGHT(destination) >= ADDRESS_HEIGHT(BOARD_ADDRESS))
+			/* Case B:
+			 * Destination depth is the same as this board's -> Send up
+			 */
+			else if (ADDRESS_DEPTH(destination) == ADDRESS_DEPTH(BOARD_ADDRESS))
 			{
-				// Send up
+				sendUp(infoBytes, dataBytes);
 			}
-			else if (ADDRESS_HEIGHT(destination) == ADDRESS_HEIGHT(BOARD_ADDRESS) - 1)
+			/* Case C:
+			 * Destination is 1 step deeper -> Send down
+			 */
+			else if (ADDRESS_DEPTH(destination) == ADDRESS_DEPTH(BOARD_ADDRESS) - 1)
 			{
-				// Send down
+				uint8_t pipeToSendTo = ADDRESS_WIDTH(destination) - (ADDRESS_DEPTH(BOARD_ADDRESS) - 1) * 5;
+				sendDownToPipe(infoBytes, dataBytes, pipeToSendTo);
 			}
-			// If it's more than 1 below, check which of the 5 pipes below to send to by checking the width and dividing it by 5?
+			/* Case D:
+			 * Destination is 2 steps deeper -> Send down
+			 */
+			else if (ADDRESS_DEPTH(destination) == ADDRESS_DEPTH(BOARD_ADDRESS) - 2)
+			{
+				uint8_t pipeToSendTo = (ADDRESS_WIDTH(destination) - 1) / 5 + 1;
+				sendDownToPipe(infoBytes, dataBytes, pipeToSendTo);
+			}
+			/* Case E:
+			 * Destination is deeper but wrong width for this board to handle -> Send up
+			 */
+			else if (ADDRESS_WIDTH(destination) > ADDRESS_WIDTH(BOARD_ADDRESS) &&
+					(ADDRESS_DEPTH(destination) > ADDRESS_DEPTH(BOARD_ADDRESS) * 5 || ADDRESS_DEPTH(destination) <= ADDRESS_DEPTH(BOARD_ADDRESS) * 5 - 5))
+			{
+				sendUp(infoBytes, dataBytes);
+			}
+			/* Case Error:
+			 * This should not happen!
+			 */
+			else
+			{
+				
+			}
 		}
-		
-		
 	}
 }
 
@@ -106,7 +139,7 @@ uint8_t HOME_SPACE_AddCommand(uint16_t CommandId, uint8_t BytesToReceive, task C
  * @param	...
  * @retval	...
  */
-uint8_t doCommand(uint16_t CommandId, uint8_t* Data)
+static uint8_t doCommand(uint16_t CommandId, uint8_t* Data)
 {
 	if (CommandId < NUMBER_OF_COMMANDS)
 	{
@@ -122,13 +155,34 @@ uint8_t doCommand(uint16_t CommandId, uint8_t* Data)
  * @param	...
  * @retval	...
  */
-uint8_t getBytesToReceiveForCommand(uint16_t CommandId)
+static uint8_t getBytesToReceiveForCommand(uint16_t CommandId)
 {
 	if (CommandId < NUMBER_OF_COMMANDS)
 		return _commands[CommandId].bytesToReceive;
 	else
 		return 0;
 }
+
+/**
+ * @brief	...
+ * @param	...
+ * @retval	...
+ */
+static void sendDownToPipe(uint8_t* InfoBytes, uint8_t* DataBytes, uint8_t Pipe)
+{
+	
+}
+
+/**
+ * @brief	...
+ * @param	...
+ * @retval	...
+ */
+static void sendUp(uint8_t* InfoBytes, uint8_t* DataBytes)
+{
+	
+}
+
 
 /* Interrupt Service Routines ------------------------------------------------*/
 /**

@@ -20,15 +20,15 @@
 
 /* Addresses -----------------------------------------------------------------*/
 /*
- *	0x EB DF AC 8(HEIGHT) 7(WIDTH)
- *				#			<- Height = 0
- *		#	#	#	#	#	<- Height = 1
+ *	0x EB DF AC 8(DEPTH) 7(WIDTH)
+ *				#			<- Depth = 0
+ *		#	#	#	#	#	<- Depth = 1
  *		^- Width = 1	^- Width = 5
  *
  *	A node below should never transmit to pipe 0 on a node above
  */
 
-#define ADDRESS_HEIGHT(ADDRESS)		(((uint8_t)ADDRESS >> 8) & 0xF)
+#define ADDRESS_DEPTH(ADDRESS)		(((uint8_t)ADDRESS >> 8) & 0xF)
 #define ADDRESS_WIDTH(ADDRESS)		(((uint8_t)ADDRESS) & 0xF)
 
 #define COORDINATOR_0_ADDRESS	0xAC8070
